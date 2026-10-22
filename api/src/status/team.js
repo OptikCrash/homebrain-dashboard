@@ -22,7 +22,8 @@ function createTeamStatus({ roster = readTeamRoster, instances = readTeamInstanc
         ...member,
         status: nonTerminal.has(latest.get(member.name)?.phase) ? 'active' : 'idle',
       })),
-      active: [...latest.values()].sort((a, b) => a.name.localeCompare(b.name))
+      active: [...latest.values()].filter((job) => nonTerminal.has(job.phase))
+        .sort((a, b) => a.name.localeCompare(b.name))
         .map((job) => Object.fromEntries(Object.entries(job).filter(([key]) => activeFields.has(key)))),
       recent: jobs.filter((job) => terminal.has(job.phase))
         .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))

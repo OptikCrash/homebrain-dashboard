@@ -160,7 +160,8 @@ Set it to the host's `$LOGS/status`. Outside Docker, the reader uses
 The directory contains the `roles.json` roster array and `<Name>-<N>.json`
 instances described in PLAN.md. Roster entries retain their fields and add
 `status: "idle"` or `"active"`. `active` contains the highest-numbered instance
-per teammate, including a terminal instance until a newer one replaces it.
+per teammate only when its phase is non-terminal (`starting`, `building`,
+`pushing`, or `reviewing`). Terminal instances appear only in `recent`.
 Active rows expose only work metadata (identity, role, engine, kind, issue/PR,
 branch, phase, timestamps, and result); process IDs and host log paths are omitted.
 Only a non-terminal latest instance marks a roster entry active. `recent`
