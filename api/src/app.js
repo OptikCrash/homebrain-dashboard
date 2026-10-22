@@ -1,9 +1,10 @@
 const express = require('express');
+const { createSyncthingStatus } = require('./status/syncthing');
 const { createBuilderStatus } = require('./status/builders');
 
 // Builds the Express app without binding a port, so tests can mount it on an
 // ephemeral port.
-function createApp({ builderStatus = createBuilderStatus() } = {}) {
+function createApp({ builderStatus = createBuilderStatus(), syncthingStatus = createSyncthingStatus() } = {}) {
   const app = express();
 
   app.disable('x-powered-by');
@@ -21,6 +22,14 @@ function createApp({ builderStatus = createBuilderStatus() } = {}) {
       res.json(await builderStatus.getStatus());
     } catch {
       res.status(503).json({ error: 'Builder status unavailable' });
+    }
+  });
+
+  app.get('/api/status/syncthing', async (req, res) => {
+    try {
+      res.json(await syncthingStatus.getStatus());
+    } catch {
+      res.status(503).json({ error: 'Syncthing status unavailable' });
     }
   });
 

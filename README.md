@@ -137,6 +137,28 @@ Each folder includes `id`, `state`, `errors`, `needItems`, and `needBytes`.
 Out-of-sync counts and folder errors are health signals, not request failures.
 The reader performs no polling, database writes, or Express routing.
 
+### Syncthing status service
+
+The API polls Syncthing immediately on startup, then waits
+`SYNCTHING_POLL_INTERVAL_MS` (default `30000`, a positive integer) after each
+completed poll. Polls never overlap; shutdown waits for active polls. Configure
+`SYNCTHING_URL`, `SYNCTHING_API_KEY`, and `SYNCTHING_FOLDERS` in the environment
+(passed through by Compose).
+
+Each poll persists a `StatusSnapshot` under service `syncthing`. A reachable
+reading with no request errors, folder errors, or outstanding items/bytes is
+healthy; other readings are unhealthy. Unexpected check exceptions record
+unknown with a safe error and polling retries on the next interval.
+
+`GET /api/status/syncthing` returns `{ "current": null, "history": [] }` before
+any polls. Afterwards, `current` is the newest snapshot and `history` contains
+up to 100 snapshots, newest first, including `current`. Each snapshot includes
+`status`, `recordedAt`, and the reader's folder, reachability, connection and
+error details when available. Requests read persisted data without triggering a
+check. Storage/read failures return HTTP 503 with
+`{ "error": "Syncthing status unavailable" }`. History survives API restarts;
+automatic retention is not implemented.
+
 ### Angular app (dev server)
 
 ```sh
