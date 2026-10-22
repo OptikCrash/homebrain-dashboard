@@ -88,6 +88,33 @@ test('mixed phases include only non-terminal latest instances in active', async 
   }
 });
 
+test('endpoint keeps finished work in recent and exposes only running latest jobs as active', async (t) => {
+  const { status, write, members } = await fixture(t);
+  // An older running instance must not reappear after a newer job finishes.
+  await write('Zeb-1.json', job('Zeb', 'building'));
+  await write('Zeb-2.json', job('Zeb', 'failed'));
+  await write('Sabine-1.json', job('Sabine', 'done'));
+  const server = createApp({ teamStatus: status }).listen(0);
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve) => server.once('listening', resolve));
+  const url = `http://127.0.0.1:${server.address().port}/api/team/status`;
+
+  let response = await fetch(url);
+  assert.equal(response.status, 200);
+  const finished = await response.json();
+  assert.deepEqual(finished.active, []);
+  assert.deepEqual(finished.roster, members.map((member) => ({ ...member, status: 'idle' })));
+  assert.deepEqual(finished.recent.map((entry) => entry.phase).sort(), ['done', 'failed']);
+
+  await write('Sabine-2.json', job('Sabine', 'reviewing'));
+  response = await fetch(url);
+  assert.equal(response.status, 200);
+  const mixed = await response.json();
+  assert.deepEqual(mixed.active, [job('Sabine', 'reviewing')]);
+  assert.deepEqual(mixed.roster.map((member) => member.status), ['idle', 'active']);
+  assert.deepEqual(mixed.recent, finished.recent);
+});
+
 test('recent includes all terminal phases and teammates, capped at five newest timestamps', async (t) => {
   const { status, write } = await fixture(t);
   const phases = ['done', 'failed', 'no-changes', 'stopped'];
