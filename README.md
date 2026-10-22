@@ -149,6 +149,15 @@ touch logs/issue-99-test.done                                                   
 
 `npm run build` writes a production build to `web/dist/`.
 
+#### Install scripts
+
+npm 12 blocks dependency install scripts unless the package is listed in `allowScripts` in
+`package.json`. `web/package.json` approves only the four packages the Angular toolchain needs:
+`esbuild`, `lmdb`, `msgpackr-extract` and `@parcel/watcher`. If an `npm install` reports other
+skipped scripts, review them before adding them (`npm install-scripts ls` lists them;
+`npm install-scripts approve <pkg>` adds one). Don't use `approve --all`.
+`node --test allow-scripts.test.mjs` (in `web/`) checks the list.
+
 ### Tests
 
 ```sh
