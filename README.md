@@ -116,6 +116,8 @@ An unavailable read also includes `error`. Builders are sorted by name. Before a
 has been discovered, the response is `{"builders":[]}`. Database failures return HTTP 503
 with `{"error":"Builder status unavailable"}`. The endpoint does not trigger a poll.
 Snapshots remain in Postgres across API restarts; automatic retention is not implemented.
+Service discovery groups names in Postgres, so polling and status requests transfer only
+one name per builder rather than fetching duplicate names from the full snapshot history.
 
 
 ### Angular app (dev server)

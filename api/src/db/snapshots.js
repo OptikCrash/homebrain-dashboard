@@ -45,10 +45,11 @@ function createSnapshotStore(prisma) {
   }
 
   async function services(prefix) {
-    const rows = await prisma.statusSnapshot.findMany({
+    // groupBy deduplicates in SQL, so only one row per service crosses the
+    // database connection even as snapshot history grows.
+    const rows = await prisma.statusSnapshot.groupBy({
+      by: ['service'],
       where: { service: { startsWith: prefix } },
-      distinct: ['service'],
-      select: { service: true },
       orderBy: { service: 'asc' },
     });
     return rows.map((row) => row.service);
