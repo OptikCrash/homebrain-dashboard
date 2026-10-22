@@ -1,0 +1,11 @@
+{
+  "name": "homebrain-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "backend": "docker compose up --build",
+    "frontend": "npm --prefix web start",
+    "all": "sh scripts/dev-all.sh",
+    "test": "node --test scripts/dev-all.test.mjs"
+  }
+}

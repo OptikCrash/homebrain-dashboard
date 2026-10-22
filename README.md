@@ -19,6 +19,26 @@ See `PLAN.md` for goals and milestones.
 Requirements: Docker with Compose v2, and Node.js `^20.19.0 || ^22.12.0 || ^24.0.0` (the range Angular 21
 supports) for the Angular app and for running the API tests locally.
 
+### Shortcuts (repo root)
+
+After the `.env` setup below and a one-time `npm install` in `web/`, from the repo root:
+
+```sh
+npm run backend    # docker compose up --build (API + Postgres)
+npm run frontend   # Angular dev server (npm --prefix web start)
+npm run all        # both at once; Ctrl-C stops both
+```
+
+`npm run all` runs `scripts/dev-all.sh`, a plain POSIX `sh` script, so the root `package.json` has
+no dependencies (no `npm-run-all`/`concurrently`). It starts both in the background and, on Ctrl-C
+or SIGTERM, sends SIGTERM to both and waits for them to exit (compose stops its containers;
+`docker compose down` still removes them). npm doesn't reliably pass SIGTERM on to `ng serve`, so
+the script signals the whole npm process tree (found with `pgrep -P`), which frees port 4200. Output from both is interleaved in one terminal. It
+needs a Unix shell (Linux, macOS, WSL); on plain Windows use the two separate scripts.
+`npm test` at the root checks these scripts (`scripts/dev-all.test.mjs`, stubbed `docker`/`npm`).
+
+The sections below are the detailed, manual path.
+
 ### API + Postgres (Docker)
 
 ```sh
