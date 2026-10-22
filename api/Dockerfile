@@ -6,11 +6,11 @@ RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
 
-# The schema has to be in place before `npm install`: its postinstall runs
-# `prisma generate`.
+# Install exactly what package-lock.json pins. The schema has to be in place
+# before `npm ci`: its postinstall runs `prisma generate`.
 COPY package*.json ./
 COPY prisma ./prisma
-RUN npm install --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
 COPY src ./src
 

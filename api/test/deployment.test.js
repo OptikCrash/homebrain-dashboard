@@ -92,3 +92,18 @@ test('Home Brain override reaches loopback services with a directly configured A
       && volume.target === '/logs/status' && volume.read_only === true));
   }
 });
+
+test('Docker image installs exactly what the committed lockfile pins', () => {
+  const api = path.join(root, 'api');
+  const pkg = JSON.parse(readFileSync(path.join(api, 'package.json'), 'utf8'));
+  const lock = JSON.parse(readFileSync(path.join(api, 'package-lock.json'), 'utf8'));
+  assert.equal(lock.name, pkg.name);
+  assert.equal(lock.version, pkg.version);
+  assert.deepEqual(lock.packages[''].dependencies, pkg.dependencies);
+  assert.deepEqual(lock.packages[''].devDependencies, pkg.devDependencies);
+
+  const dockerfile = readFileSync(path.join(api, 'Dockerfile'), 'utf8');
+  assert.match(dockerfile, /^COPY package\*\.json \.\/$/m);
+  assert.match(dockerfile, /^RUN npm ci --omit=dev\b/m);
+  assert.doesNotMatch(dockerfile, /npm install/);
+});
