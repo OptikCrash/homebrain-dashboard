@@ -77,6 +77,42 @@ test('recent includes all terminal phases and teammates, capped at five newest t
   assert.deepEqual(Object.keys(recent[0]), ['name', 'title', 'issue', 'pr', 'phase', 'result', 'updated_at']);
 });
 
+test('missing roster preserves live work and orders large instance numbers exactly', async (t) => {
+  const { statusDir, status, write } = await fixture(t);
+  await fs.unlink(path.join(statusDir, 'roles.json'));
+  // These adjacent numbers compare equal if converted to JavaScript Number.
+  await write('Zeb-9007199254740992.json', job('Zeb', 'done'));
+  await write('Zeb-9007199254740993.json', job('Zeb', 'reviewing'));
+  const result = await status.getStatus();
+  assert.deepEqual(result.roster, []);
+  assert.deepEqual(result.active, [job('Zeb', 'reviewing')]);
+  assert.equal(result.recent.length, 1);
+  assert.equal(result.recent[0].phase, 'done');
+  // Internal filename metadata must never leak or break JSON serialization.
+  assert.deepEqual(JSON.parse(JSON.stringify(result)).active, result.active);
+});
+
+test('endpoint masks roster failures and recovers after the roster is repaired', async (t) => {
+  const { statusDir, status, write, members } = await fixture(t);
+  const server = createApp({ teamStatus: status }).listen(0);
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve) => server.once('listening', resolve));
+  const url = `http://127.0.0.1:${server.address().port}/api/team/status`;
+  for (const contents of ['private malformed roster', '{}']) {
+    await fs.writeFile(path.join(statusDir, 'roles.json'), contents);
+    const response = await fetch(url);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: 'Team status unavailable' });
+  }
+  await write('roles.json', members);
+  const response = await fetch(url);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    roster: members.map((member) => ({ ...member, status: 'idle' })),
+    active: [], recent: [],
+  });
+});
+
 test('endpoint skips bad instances, tolerates missing directory, removes old route and masks errors', async (t) => {
   const { statusDir, status, write } = await fixture(t);
   await write('Zeb-1.json', job('Zeb'));
