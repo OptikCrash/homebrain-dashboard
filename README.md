@@ -74,41 +74,49 @@ host reachable by name. This requires Docker Engine 20.10+ on Linux; Docker
 Desktop is not required. The mapping itself needs no host firewall change and
 keeps the existing Compose network and Postgres connection in place.
 
-**Chris must also change Syncthing on the host.** In Syncthing's `config.xml`,
-change the GUI/API listen-address line from:
+The default bridge-network deployment requires host services to listen on an
+address reachable through that mapping. For the Home Brain's loopback-only
+Syncthing, use the override below; keep Syncthing bound to `127.0.0.1:8384`.
 
-```xml
-<gui address="127.0.0.1:8384" ...>
-```
+### Home Brain deployment
 
-to:
+This Linux host uses an override because Syncthing's GUI/API intentionally listens
+only on host loopback. The API uses host networking so it can reach that listener.
+Requires Docker Compose **2.24.4+** (for the `!reset` merge tags).
 
-```xml
-<gui address="0.0.0.0:8384" ...>
-```
-
-The `...` represents the existing attributes; preserve those and the GUI's
-contents. Restart Syncthing after editing. Alternatively, bind to the specific
-Docker bridge gateway IP for this Compose project, provided it is reachable
-through the configured host mapping. To inspect the address the API uses:
+Copy `.env.example` to `.env`, set real Postgres credentials and the Syncthing API
+key, and use these host-specific values:
 
 ```sh
-docker compose exec api getent hosts host.docker.internal
+TEAM_STATUS_DIR=/srv/homebrain/hermes-dev/work/logs/status
+SYNCTHING_URL=http://127.0.0.1:8384
+DASHBOARD_PORT=8090
 ```
 
-If that address differs from the project's bridge gateway, use the reachable
-gateway IP explicitly in `SYNCTHING_URL` when binding only to that interface.
-Binding to `0.0.0.0` listens on all host interfaces. If LAN access to port 8384
-is unwanted, configure the host firewall to block LAN access while allowing
-the API container to connect. Syncthing's API key provides another layer of
-protection; set `SYNCTHING_API_KEY` from its GUI settings.
+Run from the repository root:
 
-After the host change, use `SYNCTHING_URL=http://host.docker.internal:8384`
-(the default in `.env.example` and Compose) and recreate `api` to apply the
-configuration (`docker compose up -d api`). Host config edits, Syncthing restarts,
-and firewall changes must be performed on the real host, outside a builder sandbox.
-The same binding requirement applies to LiveSync/CouchDB if its host service
-also listens only on loopback; use its own reachable listen address and port.
+```sh
+docker compose -f docker-compose.yml -f docker-compose.homebrain.yml up -d --build
+```
+
+The override sets `SYNCTHING_URL=http://127.0.0.1:8384` and publishes Postgres only
+on `127.0.0.1:5434`, leaving port **5433** for the existing development database.
+It builds the API's `DATABASE_URL` from `POSTGRES_USER`, `POSTGRES_PASSWORD`, and
+`POSTGRES_DB`, using `127.0.0.1:5434` instead of Compose's `postgres` DNS name.
+Port 5434 must be free before starting this deployment.
+
+With host networking, there is no Docker port mapping: `DASHBOARD_PORT` sets the
+app's `PORT` directly (default **8090**), and the health check uses that same port.
+Choose the port the app should actually listen on; Docker cannot remap it.
+The team status directory remains mounted read-only at `/logs/status`.
+
+To check the merged configuration without starting containers:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.homebrain.yml config
+```
+
+Use the same two `-f` arguments for subsequent `up`, `logs`, and `down` commands.
 
 ### Database (Prisma)
 
