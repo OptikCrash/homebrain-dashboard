@@ -20,32 +20,52 @@ test('root scripts point at compose, the web dev server and dev-all.sh', () => {
   assert.equal(pkg.devDependencies, undefined);
 });
 
-test('dev-all.sh starts backend and frontend and stops both on SIGINT', async (t) => {
+test('dev-all.sh starts backend and frontend and stops both on SIGINT', { timeout: 10_000 }, async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'dev-all-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const log = join(dir, 'log');
   writeFileSync(log, '');
-  for (const name of ['docker', 'npm']) {
+  // The npm stub starts an `ng` stub and, like real npm, does not forward SIGTERM to it:
+  // dev-all.sh has to stop ng itself or it would keep port 4200.
+  const stubs = {
+    docker: '',
+    npm: 'ng-stub &',
+    'ng-stub': '',
+  };
+  for (const [name, extra] of Object.entries(stubs)) {
     const stub = join(dir, name);
     writeFileSync(stub, `#!/bin/sh
 echo "started ${name} $*" >> "$STUB_LOG"
+${extra}
 trap 'echo "stopped ${name}" >> "$STUB_LOG"; exit 0' TERM
 while :; do sleep 0.05; done
 `);
     chmodSync(stub, 0o755);
   }
 
+  // Own process group, so cleanup can kill any stub a regression leaves running.
   const child = spawn('sh', [script], {
     env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, STUB_LOG: log },
     stdio: 'ignore',
+    detached: true,
+  });
+  t.after(() => {
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch {}
+    rmSync(dir, { recursive: true, force: true });
   });
   const exited = new Promise((resolve) => child.on('exit', (code) => resolve(code)));
-  const lines = () => readFileSync(log, 'utf8').trim().split('\n').filter(Boolean);
+  const lines = (prefix) => readFileSync(log, 'utf8').split('\n').filter((l) => l.startsWith(prefix)).sort();
 
-  for (let i = 0; lines().length < 2 && i < 100; i++) await delay(50);
-  assert.deepEqual(lines().sort(), ['started docker compose up --build', 'started npm --prefix web start']);
+  for (let i = 0; lines('started').length < 3 && i < 100; i++) await delay(50);
+  assert.deepEqual(lines('started'), [
+    'started docker compose up --build',
+    'started ng-stub ',
+    'started npm --prefix web start',
+  ]);
 
   child.kill('SIGINT');
   assert.equal(await exited, 130);
-  assert.deepEqual(lines().filter((l) => l.startsWith('stopped')).sort(), ['stopped docker', 'stopped npm']);
+  for (let i = 0; lines('stopped').length < 3 && i < 40; i++) await delay(50);
+  assert.deepEqual(lines('stopped'), ['stopped docker', 'stopped ng-stub', 'stopped npm']);
 });

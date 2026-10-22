@@ -32,7 +32,8 @@ npm run all        # both at once; Ctrl-C stops both
 `npm run all` runs `scripts/dev-all.sh`, a plain POSIX `sh` script, so the root `package.json` has
 no dependencies (no `npm-run-all`/`concurrently`). It starts both in the background and, on Ctrl-C
 or SIGTERM, sends SIGTERM to both and waits for them to exit (compose stops its containers;
-`docker compose down` still removes them). Output from both is interleaved in one terminal. It
+`docker compose down` still removes them). npm doesn't reliably pass SIGTERM on to `ng serve`, so
+the script signals the whole npm process tree (found with `pgrep -P`), which frees port 4200. Output from both is interleaved in one terminal. It
 needs a Unix shell (Linux, macOS, WSL); on plain Windows use the two separate scripts.
 `npm test` at the root checks these scripts (`scripts/dev-all.test.mjs`, stubbed `docker`/`npm`).
 
