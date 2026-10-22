@@ -43,7 +43,7 @@ test('missing directory is empty; malformed roster and unexpected directory erro
   await assert.rejects(readTeamInstances({ statusDir: path.join(statusDir, 'roles.json') }), { code: 'ENOTDIR' });
 });
 
-test('idle roster, active work, terminal retention and numeric supersession read fresh on each call', async (t) => {
+test('idle roster, active work, terminal exclusion and numeric supersession read fresh on each call', async (t) => {
   const { status, write, members } = await fixture(t);
   assert.deepEqual(await status.getStatus(), { roster: members.map((m) => ({ ...m, status: 'idle' })), active: [], recent: [] });
   await write('Zeb-9.json', job('Zeb'));
@@ -52,7 +52,7 @@ test('idle roster, active work, terminal retention and numeric supersession read
   assert.deepEqual(result.active, [job('Zeb')]);
   await write('Zeb-9.json', job('Zeb', 'done'));
   result = await status.getStatus();
-  assert.equal(result.active[0].phase, 'done');
+  assert.deepEqual(result.active, []);
   assert.equal(result.roster[0].status, 'idle');
   await write('Zeb-10.json', job('Zeb', 'starting', '2026-10-21T00:00:00Z'));
   result = await status.getStatus();
@@ -60,6 +60,32 @@ test('idle roster, active work, terminal retention and numeric supersession read
   assert.equal(result.active[0].phase, 'starting');
   assert.equal(result.roster[0].status, 'active');
   assert.equal(result.recent[0].phase, 'done');
+});
+
+test('all terminal phases leave active empty and every roster member idle', async (t) => {
+  const { status, write, members } = await fixture(t);
+  for (const phase of ['done', 'failed', 'no-changes', 'stopped']) {
+    await write('Zeb-1.json', job('Zeb', phase));
+    await write('Sabine-1.json', job('Sabine', phase));
+    const result = await status.getStatus();
+    assert.deepEqual(result.active, []);
+    assert.deepEqual(result.roster, members.map((member) => ({ ...member, status: 'idle' })));
+    assert.equal(result.recent.length, 2);
+    assert.ok(result.recent.every((entry) => entry.phase === phase));
+  }
+});
+
+test('mixed phases include only non-terminal latest instances in active', async (t) => {
+  const { status, write } = await fixture(t);
+  await write('Sabine-1.json', job('Sabine', 'building'));
+  await write('Sabine-2.json', job('Sabine', 'failed'));
+  for (const phase of ['starting', 'building', 'pushing', 'reviewing']) {
+    await write('Zeb-1.json', job('Zeb', phase));
+    const result = await status.getStatus();
+    assert.deepEqual(result.active, [job('Zeb', phase)]);
+    assert.deepEqual(result.roster.map((member) => member.status), ['active', 'idle']);
+    assert.deepEqual(result.recent.map((entry) => entry.phase), ['failed']);
+  }
 });
 
 test('recent includes all terminal phases and teammates, capped at five newest timestamps', async (t) => {
@@ -71,7 +97,7 @@ test('recent includes all terminal phases and teammates, capped at five newest t
   }
   await write('Zeb-99.json', job('Zeb', 'reviewing', '2026-10-22T19:00:00Z'));
   const { recent, active } = await status.getStatus();
-  assert.equal(active.length, 2);
+  assert.deepEqual(active, [job('Zeb', 'reviewing', '2026-10-22T19:00:00Z')]);
   assert.equal(recent.length, 5);
   assert.deepEqual(recent.map((r) => r.updated_at), [8, 7, 6, 5, 4].map((i) => `2026-10-22T18:0${i}:00Z`));
   assert.deepEqual(Object.keys(recent[0]), ['name', 'title', 'issue', 'pr', 'phase', 'result', 'updated_at']);

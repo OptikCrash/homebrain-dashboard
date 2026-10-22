@@ -83,10 +83,8 @@ read-only bind mount of `$LOGS/status`. Two kinds of file:
 
 - **Dashboard rule**: for "who's working on what", use only the
   *highest-numbered instance file per teammate name* (the latest job they
-  started). A terminal-phase instance stays visible as that teammate's row
-  until a new instance file for the same name appears (at which point the
-  new one replaces it) — so a just-finished job doesn't vanish immediately,
-  but nothing piles up as permanent history either.
+  started). Only a non-terminal latest instance appears in Active work and marks the
+  teammate active in the roster. Terminal instances appear only in Recent.
 - No Postgres history/timeline for this card — it's live state, not an
   uptime trend; the roster + instance files are themselves the source of
   truth and need no snapshot store.
