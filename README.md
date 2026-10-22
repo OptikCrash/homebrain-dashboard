@@ -122,6 +122,21 @@ Service discovery groups names in Postgres, so polling and status requests trans
 one name per builder rather than fetching duplicate names from the full snapshot history.
 
 
+### Syncthing health reader
+
+`api/src/checks/syncthing.js` exports `readSyncthingStatus({ url, apiKey, folders, fetch })`.
+Options default to `SYNCTHING_URL`, `SYNCTHING_API_KEY`, `SYNCTHING_FOLDERS` and
+Node's built-in fetch. Folder IDs are comma-separated; an empty list checks only
+the system and connections. Each request has a five-second timeout.
+
+The reading contains `reachable`, `folders`, `connections` (device IDs mapped to
+`{ connected }`), and `error`. Reachability means the system status request succeeded;
+later failures preserve successful results and set `error`. Failed folder reads are
+omitted, so consumers must check `error` before treating the reading as healthy.
+Each folder includes `id`, `state`, `errors`, `needItems`, and `needBytes`.
+Out-of-sync counts and folder errors are health signals, not request failures.
+The reader performs no polling, database writes, or Express routing.
+
 ### Angular app (dev server)
 
 ```sh
