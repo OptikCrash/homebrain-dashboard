@@ -130,14 +130,30 @@ npm install
 npm start          # ng serve, http://localhost:4200
 ```
 
-The default route shows a placeholder page. `npm run build` writes a production build to
-`web/dist/`.
+The default route shows the dashboard with the **Dev Builders** card. The card fetches
+`GET /api/status/builders` on load and then every 30 seconds, and shows each builder's state
+(idle/running/unknown, colored by health), the issue/PR and last log line of any running job, and
+a timeline strip of its recent history (green healthy, red unhealthy, grey unknown; hover a
+segment for its time range). If a refresh fails it keeps the last data and shows an error.
+
+The dev server proxies `/api` to the API at `http://localhost:8090` (`web/proxy.conf.json`), so
+start the API with `docker compose up` first. If you changed `DASHBOARD_PORT`, change the proxy
+target to match.
+
+To watch it update, create a dummy job in the logs dir (`./logs` by default) and wait for a poll:
+
+```sh
+echo 1 > logs/issue-99-test.pid; echo "doing things" > logs/issue-99-test.log   # running
+touch logs/issue-99-test.done                                                     # idle
+```
+
+`npm run build` writes a production build to `web/dist/`.
 
 ### Tests
 
 ```sh
 cd api && npm install && npm test   # node:test: GET /health, snapshot store and builder status unit tests
-cd web && npm install && npm test   # Angular unit tests (Vitest)
+cd web && npm install && npm test   # Angular unit tests (Vitest): home page, Dev Builders card, timeline strip
 ```
 
 The snapshot store's database tests (insert a row and read it back) are skipped unless
