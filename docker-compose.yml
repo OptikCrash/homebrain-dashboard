@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       PORT: 3000
-      # Not used by the skeleton yet; wired up for Prisma in the next issue.
+      # Used by Prisma; migrations are applied on container start.
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     ports:
       # The dashboard's own dedicated host port (no reverse proxy).

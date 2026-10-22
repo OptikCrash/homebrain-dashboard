@@ -43,6 +43,24 @@ curl -i http://localhost:8090/health
 
 Stop with `docker compose down` (add `-v` to also delete the Postgres volume).
 
+### Database (Prisma)
+
+The schema lives in `api/prisma/schema.prisma` and migrations in `api/prisma/migrations/`. The
+`api` container runs `prisma migrate deploy` on start, so `docker compose up` creates or updates
+the tables.
+
+To work on the schema outside Docker, point `DATABASE_URL` at a Postgres you can reach from the
+host (export it, or put it in `api/.env`, which is gitignored), then:
+
+```sh
+cd api
+npm install            # also runs `prisma generate`
+npm run db:migrate     # prisma migrate dev: applies migrations, creates new ones after schema edits
+```
+
+The rest of the API reads and writes status history through `api/src/db/snapshots.js`
+(`snapshots.record()`, `snapshots.latest()`, `snapshots.history()`).
+
 ### Angular app (dev server)
 
 ```sh
@@ -57,8 +75,17 @@ The default route shows a placeholder page. `npm run build` writes a production 
 ### Tests
 
 ```sh
-cd api && npm install && npm test   # node:test, hits GET /health on an ephemeral port
+cd api && npm install && npm test   # node:test: GET /health plus snapshot store unit tests
 cd web && npm install && npm test   # Angular unit tests (Vitest)
+```
+
+The snapshot store's database tests (insert a row and read it back) are skipped unless
+`DATABASE_URL` is set. To run them, migrate a database first:
+
+```sh
+cd api
+export DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/DATABASE
+npm run db:deploy && npm test
 ```
 
 ## Configuration
