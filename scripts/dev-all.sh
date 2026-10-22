@@ -1,5 +1,6 @@
 #!/bin/sh
 # `npm run all`: the API stack (docker compose) and the Angular dev server together.
+# Arguments go to `docker compose` before `up`: `npm run all:homebrain` passes the two `-f` files.
 # Ctrl-C (or SIGTERM) stops both. Plain POSIX sh so the root package.json needs no dependencies.
 #
 # Background jobs in a non-interactive shell ignore SIGINT, so Ctrl-C reaches only this script;
@@ -8,7 +9,7 @@
 set -u
 cd "$(dirname "$0")/.."
 
-docker compose up --build &
+docker compose "$@" up --build &
 api=$!
 npm --prefix web start &
 web=$!
