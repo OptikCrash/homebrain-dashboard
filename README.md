@@ -80,6 +80,8 @@ The API polls immediately on startup, then every `BUILDER_POLL_INTERVAL_MS` mill
 (default `30000`, a positive integer). Slow polls finish before the next interval starts.
 Each poll writes one `StatusSnapshot` per discovered builder, using service keys such as
 `dev-builders:codex`. Idle and active builders are healthy; stale jobs are unhealthy.
+Jobs without a named builder use their job name as the identity (for example,
+`dev-builders:review-10`), preserving review PR targets and history.
 Previously seen builders missing from the logs, or an unreadable logs directory, produce
 unknown snapshots. Poll errors are logged and retried; shutdown waits for the active poll.
 

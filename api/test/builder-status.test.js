@@ -3,6 +3,10 @@ const assert = require('node:assert/strict');
 const { setTimeout: delay } = require('node:timers/promises');
 const { createBuilderStatus, startBuilderPolling, pollingInterval } = require('../src/status/builders');
 const { createApp } = require('../src/app');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const { readBuilderStatus } = require('../src/checks/builders');
 
 function memoryStore() {
   const rows = [];
@@ -16,6 +20,37 @@ function memoryStore() {
 
 const job = { name: 'issue-5-codex', target: { builder: 'codex', kind: 'issue', number: 5 }, state: 'running', stale: false };
 const reading = { available: true, builders: { codex: { state: 'running' }, claude: { state: 'idle' } }, jobs: [job] };
+
+test('review jobs survive reading, persistence and status history through their lifecycle', async (t) => {
+  const logsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'builder-review-'));
+  t.after(() => fs.rm(logsDir, { recursive: true, force: true }));
+  await fs.writeFile(path.join(logsDir, 'review-10.pid'), '123');
+  await fs.writeFile(path.join(logsDir, 'review-10.log'), 'Reviewing PR #10\n');
+  const store = memoryStore();
+  let now = Date.now();
+  const status = createBuilderStatus({ store, read: () => readBuilderStatus({ logsDir, now }) });
+  await status.poll();
+  const active = (await status.getStatus()).builders[0];
+  assert.equal(active.name, 'review-10');
+  assert.equal(store.rows[0].service, 'dev-builders:review-10');
+  assert.equal(active.current.state, 'running');
+  assert.equal(active.current.status, 'healthy');
+  assert.deepEqual(active.current.jobs[0].target, { kind: 'pr', number: 10 });
+  assert.equal(active.current.jobs[0].lastLogLine, 'Reviewing PR #10');
+  now += 3 * 60 * 60 * 1000;
+  await status.poll();
+  assert.equal((await status.getStatus()).builders[0].current.status, 'unhealthy');
+  await fs.writeFile(path.join(logsDir, 'review-10.done'), 'done');
+  await status.poll();
+  assert.equal((await status.getStatus()).builders[0].current.state, 'idle');
+  await fs.unlink(path.join(logsDir, 'review-10.pid'));
+  await status.poll();
+  const { current, history } = (await status.getStatus()).builders[0];
+  assert.equal(current.status, 'unknown');
+  assert.equal(history.length, 4);
+  assert.equal(history[1].status, 'healthy');
+  assert.deepEqual(history[3].jobs, active.current.jobs);
+});
 
 test('records each builder on every poll and exposes bounded newest-first history', async () => {
   const store = memoryStore();

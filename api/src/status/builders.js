@@ -16,12 +16,22 @@ function createBuilderStatus({ store = snapshots, read = readBuilderStatus } = {
   async function poll() {
     const reading = await read();
     const recordedAt = new Date();
+    // Review jobs have no named builder. Keep them under their stable job
+    // name so their PR target and lifecycle are still persisted.
+    const jobsByBuilder = new Map();
+    for (const job of reading.jobs ?? []) {
+      const name = job.target?.builder || job.name;
+      if (!jobsByBuilder.has(name)) jobsByBuilder.set(name, []);
+      jobsByBuilder.get(name).push(job);
+    }
     const known = await store.services(PREFIX);
     const names = new Set([...known.map((key) => key.slice(PREFIX.length)),
-      ...Object.keys(reading.builders ?? {})]);
+      ...Object.keys(reading.builders ?? {}), ...jobsByBuilder.keys()]);
     for (const name of names) {
-      const builder = reading.available ? reading.builders?.[name] : null;
-      const jobs = (reading.jobs ?? []).filter((job) => job.target?.builder === name);
+      const jobs = jobsByBuilder.get(name) ?? [];
+      const builder = reading.available ? reading.builders?.[name] ?? (jobs.length ? {
+        state: jobs.some((job) => job.state === 'running') ? 'running' : 'idle',
+      } : null) : null;
       await store.record({
         service: PREFIX + name,
         status: !builder ? 'unknown' : jobs.some((job) => job.stale) ? 'unhealthy' : 'healthy',
