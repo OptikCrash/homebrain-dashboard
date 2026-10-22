@@ -43,6 +43,20 @@ curl -i http://localhost:8090/health
 
 Stop with `docker compose down` (add `-v` to also delete the Postgres volume).
 
+The API mounts `/opt/data/work/logs` read-only at `/var/log/builders` (`LOGS`
+inside the container). The host directory must already exist and be readable by
+the container's `node` user. No GitHub credentials are mounted or passed in.
+
+`api/src/builders.js` exports `readBuilderStatus(logsDir?)`, returning one
+`{ name, status, lastLogLine }` entry for each of `claude` and `codex`. A
+`<name>.pid` file means `running`; otherwise the builder is `idle`. The host
+wrapper must remove PID files when jobs finish: stale files still mean running,
+since host PIDs cannot be checked inside the container. Running builders get the
+last line of `<name>.log` (or `null` for an empty/missing log); idle builders get
+`null`. Other filesystem errors are surfaced to the caller. Local callers can
+pass a logs directory explicitly or set `LOGS`. This module is ready for later
+API polling/endpoint wiring; v1 deliberately omits GitHub PR/issue counts.
+
 ### Angular app (dev server)
 
 ```sh

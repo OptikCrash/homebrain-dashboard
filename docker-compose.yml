@@ -4,11 +4,19 @@ services:
     restart: unless-stopped
     environment:
       PORT: 3000
+      LOGS: /var/log/builders
       # Not used by the skeleton yet; wired up for Prisma in the next issue.
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     ports:
       # The dashboard's own dedicated host port (no reverse proxy).
       - "${DASHBOARD_PORT:-8090}:3000"
+    volumes:
+      - type: bind
+        source: /opt/data/work/logs
+        target: /var/log/builders
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       postgres:
         condition: service_healthy
