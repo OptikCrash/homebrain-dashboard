@@ -1,15 +1,17 @@
 import { Component } from '@angular/core';
-import { BuildersCard } from '../builders/builders-card';
 import { SyncthingCard } from '../syncthing/syncthing-card';
+import { ActiveWorkCard } from '../team/active-work-card';
+import { RosterCard } from '../team/roster-card';
 
 @Component({
   selector: 'app-home',
-  imports: [BuildersCard, SyncthingCard],
+  imports: [RosterCard, ActiveWorkCard, SyncthingCard],
   template: `
     <main>
       <h1>Home Brain dashboard</h1>
       <div class="cards">
-        <app-builders-card />
+        <app-roster-card />
+        <app-active-work-card />
         <app-syncthing-card />
       </div>
     </main>
