@@ -163,6 +163,10 @@ Feedback from Chris after M2–M4 landed. Acceptance criteria:
 - Exact signal confirmed with Chris before building.
 
 ## Decisions
+- `package-lock.json` is committed (root, `web/`, and `api/`) and Docker
+  builds use `npm ci`, not `npm install` — reproducible builds. A PR that
+  changes a lockfile without a corresponding `package.json` change should be
+  flagged in review as unexpected/unintended.
 - Dev builder status is the first check (data already available locally,
   lowest risk, good scaffold for the rest).
 - History is in scope from v1 (not just live status) — backed by Postgres.
