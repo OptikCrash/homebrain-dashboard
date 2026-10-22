@@ -185,6 +185,18 @@ Each folder includes `id`, `state`, `errors`, `needItems`, and `needBytes`.
 Out-of-sync counts and folder errors are health signals, not request failures.
 The reader performs no polling, database writes, or Express routing.
 
+### CouchDB reachability reader
+
+`api/src/checks/couchdb.js` exports `readCouchdbStatus({ url, fetch })`, defaulting
+to `COUCHDB_URL` and Node's built-in fetch. It sends an unauthenticated GET to
+`/_up`, falling back to `/` only for HTTP 404. HTTP 200 and 401 mean reachable;
+other statuses, network errors and five-second request timeouts return
+`{ reachable: false, error }`. Successful readings have `error: undefined`.
+Base paths are preserved. URLs containing credentials, queries or fragments are
+rejected, and redirects are disabled. No CouchDB credentials are needed.
+For the loopback-only listener, use the Home Brain host networking deployment.
+This reader performs no polling, database writes or Express routing.
+
 ### Syncthing status service
 
 The API polls Syncthing immediately on startup, then waits
