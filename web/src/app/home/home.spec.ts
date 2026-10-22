@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { Home } from './home';
 
 describe('Home', () => {
-  it('renders the heading and the Dev Builders card', async () => {
+  it('renders the heading, the Dev Builders card and the Syncthing card', async () => {
     await TestBed.configureTestingModule({
       imports: [Home],
       providers: [provideHttpClient(), provideHttpClientTesting()],
@@ -16,5 +16,6 @@ describe('Home', () => {
     const element = fixture.nativeElement as HTMLElement;
     expect(element.querySelector('h1')?.textContent).toContain('Home Brain dashboard');
     expect(element.querySelector('app-builders-card h2')?.textContent).toContain('Dev Builders');
+    expect(element.querySelector('app-syncthing-card h2')?.textContent).toContain('Syncthing');
   });
 });
