@@ -137,6 +137,24 @@ describe('lastLogLine', () => {
     assert.equal(line, `${'z'.repeat(300)}…`);
   });
 
+  test('log truncated between stat() and read() ignores the unread buffer', async (t) => {
+    const file = path.join(logsDir, 'shrinking.log');
+    await write('shrinking.log', 'kept line\nthis part gets truncated away\n');
+    const realOpen = fs.open;
+    t.mock.method(fs, 'open', async (...args) => {
+      const handle = await realOpen(...args);
+      const realStat = handle.stat.bind(handle);
+      handle.stat = async () => {
+        const stats = await realStat();
+        await fs.truncate(file, 'kept line\n'.length);
+        return stats;
+      };
+      return handle;
+    });
+
+    assert.equal(await lastLogLine(file), 'kept line');
+  });
+
   test('empty or missing log is null', async () => {
     await write('empty.log');
     assert.equal(await lastLogLine(path.join(logsDir, 'empty.log')), null);

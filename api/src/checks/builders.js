@@ -63,8 +63,10 @@ async function lastLogLine(file, { maxBytes = TAIL_BYTES } = {}) {
     const { size } = await handle.stat();
     const length = Math.min(size, maxBytes);
     const buffer = Buffer.alloc(length);
-    await handle.read(buffer, 0, length, size - length);
-    const lines = buffer.toString('utf8').split(/\r?\n|\r/);
+    // The file may shrink between stat() and read(); only decode what was
+    // actually read so the unread tail of the buffer doesn't leak NUL bytes.
+    const { bytesRead } = await handle.read(buffer, 0, length, size - length);
+    const lines = buffer.subarray(0, bytesRead).toString('utf8').split(/\r?\n|\r/);
     // If we started mid-file, the first line is probably partial; still use
     // it if it's all we have (one huge line with no newlines).
     for (let i = lines.length - 1; i >= 0; i--) {
