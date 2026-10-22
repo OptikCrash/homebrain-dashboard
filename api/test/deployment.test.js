@@ -36,6 +36,8 @@ test('Compose reaches host services while preserving team status and database ne
   assert.equal(new URL(api.environment.DATABASE_URL).hostname, 'postgres');
   assert.equal(api.depends_on.postgres.condition, 'service_healthy');
   assert.deepEqual(api.networks, postgres.networks);
+  assert.equal(postgres.network_mode, undefined);
+  assert.ok(postgres.command == null);
   assert.ok(!postgres.ports?.length);
 });
 
@@ -76,10 +78,15 @@ test('Home Brain override reaches loopback services with a directly configured A
     assert.equal(db.username, postgres.environment.POSTGRES_USER);
     assert.equal(db.password, postgres.environment.POSTGRES_PASSWORD);
     assert.equal(db.pathname, `/${postgres.environment.POSTGRES_DB}`);
-    assert.equal(postgres.ports.length, 1);
-    assert.equal(postgres.ports[0].host_ip, '127.0.0.1');
-    assert.equal(postgres.ports[0].published, '5434');
-    assert.equal(postgres.ports[0].target, 5432);
+    assert.equal(postgres.network_mode, 'host');
+    assert.ok(!postgres.networks);
+    assert.ok(!postgres.ports?.length);
+    assert.deepEqual(postgres.command, [
+      'postgres', '-p', '5434', '-c', 'listen_addresses=127.0.0.1',
+    ]);
+    assert.deepEqual(postgres.healthcheck.test, [
+      'CMD-SHELL', 'pg_isready -h 127.0.0.1 -p 5434 -U $${POSTGRES_USER} -d $${POSTGRES_DB}',
+    ]);
     assert.equal(api.depends_on.postgres.condition, 'service_healthy');
     assert.ok(api.volumes.some((volume) => volume.source === '/srv/homebrain/hermes-dev/work/logs/status'
       && volume.target === '/logs/status' && volume.read_only === true));

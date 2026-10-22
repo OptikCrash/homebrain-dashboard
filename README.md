@@ -108,8 +108,12 @@ The manual equivalent (add `-d` to run it detached):
 docker compose -f docker-compose.yml -f docker-compose.homebrain.yml up --build
 ```
 
-The override sets `SYNCTHING_URL=http://127.0.0.1:8384` and publishes Postgres only
-on `127.0.0.1:5434`, leaving port **5433** for the existing development database.
+The override sets `SYNCTHING_URL=http://127.0.0.1:8384` and runs Postgres with
+host networking, listening only on `127.0.0.1:5434`, leaving port **5433** for the
+existing development database. On this box, WSL mirrored networking prevents a
+host-network API container from reaching a Docker-published loopback port.
+Postgres host networking avoids that hop, using the same approach as the API
+override from #32.
 It builds the API's `DATABASE_URL` from `POSTGRES_USER`, `POSTGRES_PASSWORD`, and
 `POSTGRES_DB`, using `127.0.0.1:5434` instead of Compose's `postgres` DNS name.
 Port 5434 must be free before starting this deployment.
