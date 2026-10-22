@@ -76,6 +76,52 @@ and flags it `stale` if neither file has changed for 2 hours. The job name gives
 
 No GitHub token goes into the container, so open PR/issue counts aren't shown in v1.
 
+The API polls immediately on startup, then every `BUILDER_POLL_INTERVAL_MS` milliseconds
+(default `30000`, a positive integer). Slow polls finish before the next interval starts.
+Each poll writes one `StatusSnapshot` per discovered builder, using service keys such as
+`dev-builders:codex`. Idle and active builders are healthy; stale jobs are unhealthy.
+Jobs without a named builder use their job name as the identity (for example,
+`dev-builders:review-10`), preserving review PR targets and history.
+Previously seen builders missing from the logs, or an unreadable logs directory, produce
+unknown snapshots. Poll errors are logged and retried; shutdown waits for the active poll.
+
+`GET /api/status/builders` reads persisted snapshots and returns:
+
+```json
+{
+  "builders": [{
+    "name": "codex",
+    "current": {
+      "name": "codex",
+      "status": "healthy",
+      "state": "idle",
+      "available": true,
+      "jobs": [],
+      "recordedAt": "2026-10-22T12:00:00.000Z"
+    },
+    "history": [{
+      "name": "codex",
+      "status": "healthy",
+      "state": "idle",
+      "available": true,
+      "jobs": [],
+      "recordedAt": "2026-10-22T12:00:00.000Z"
+    }]
+  }]
+}
+```
+
+`history` contains the most recent 100 snapshots per builder, newest first, including
+`current` as its first entry. Each entry has the same shape as `current`; `jobs` contains
+that builder's reader job details (target, state, and activity/log details when running).
+An unavailable read also includes `error`. Builders are sorted by name. Before any builder
+has been discovered, the response is `{"builders":[]}`. Database failures return HTTP 503
+with `{"error":"Builder status unavailable"}`. The endpoint does not trigger a poll.
+Snapshots remain in Postgres across API restarts; automatic retention is not implemented.
+Service discovery groups names in Postgres, so polling and status requests transfer only
+one name per builder rather than fetching duplicate names from the full snapshot history.
+
+
 ### Angular app (dev server)
 
 ```sh

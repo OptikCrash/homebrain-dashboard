@@ -16,11 +16,29 @@ function fakePrisma() {
         calls.push(['findMany', args]);
         return [];
       },
+      async groupBy(args) {
+        calls.push(['groupBy', args]);
+        return [{ service: 'dev-builders:claude' }, { service: 'dev-builders:codex' }];
+      },
     },
   };
 }
 
 describe('snapshot store (unit)', () => {
+  test('services groups and sorts service names in the database', async () => {
+    const prisma = fakePrisma();
+    const store = createSnapshotStore(prisma);
+
+    assert.deepEqual(await store.services('dev-builders:'), [
+      'dev-builders:claude', 'dev-builders:codex',
+    ]);
+    assert.deepEqual(prisma.calls, [['groupBy', {
+      by: ['service'],
+      where: { service: { startsWith: 'dev-builders:' } },
+      orderBy: { service: 'asc' },
+    }]]);
+  });
+
   test('record passes service, status and detail to Prisma', async () => {
     const prisma = fakePrisma();
     const store = createSnapshotStore(prisma);
@@ -72,8 +90,32 @@ describe('snapshot store (database)', { skip: !process.env.DATABASE_URL && 'DATA
   const service = `test-${process.pid}-${Date.now()}`;
 
   after(async () => {
-    await getPrisma().statusSnapshot.deleteMany({ where: { service } });
+    await getPrisma().statusSnapshot.deleteMany({ where: { service: { startsWith: service } } });
     await disconnectPrisma();
+  });
+
+  test('service discovery transfers only grouped names with substantial duplicate history', async () => {
+    const prefix = `${service}:builders:`;
+    const names = [`${prefix}claude`, `${prefix}codex`];
+    const model = getPrisma().statusSnapshot;
+    const transferred = [];
+    const store = createSnapshotStore({ statusSnapshot: {
+      async groupBy(args) {
+        const rows = await model.groupBy(args);
+        transferred.push(rows.length);
+        return rows;
+      },
+    } });
+    assert.deepEqual(await store.services(prefix), []);
+    await model.createMany({ data: names.map((name) => ({ service: name, status: 'healthy' })) });
+    assert.deepEqual(await store.services(prefix), names);
+    await model.createMany({
+      data: Array.from({ length: 10000 }, (_, i) => ({ service: names[i % 2], status: 'healthy' })),
+    });
+    await model.create({ data: { service: `${service}:other`, status: 'unknown' } });
+    assert.equal(await model.count({ where: { service: { startsWith: prefix } } }), 10002);
+    assert.deepEqual(await store.services(prefix), names);
+    assert.deepEqual(transferred, [0, 2, 2]);
   });
 
   test('inserts a snapshot and reads it back', async () => {

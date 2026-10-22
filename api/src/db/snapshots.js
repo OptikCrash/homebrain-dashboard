@@ -44,7 +44,18 @@ function createSnapshotStore(prisma) {
     return row ?? null;
   }
 
-  return { record, history, latest };
+  async function services(prefix) {
+    // groupBy deduplicates in SQL, so only one row per service crosses the
+    // database connection even as snapshot history grows.
+    const rows = await prisma.statusSnapshot.groupBy({
+      by: ['service'],
+      where: { service: { startsWith: prefix } },
+      orderBy: { service: 'asc' },
+    });
+    return rows.map((row) => row.service);
+  }
+
+  return { record, history, latest, services };
 }
 
 // Lazily bound to the shared client so importing this module never opens a

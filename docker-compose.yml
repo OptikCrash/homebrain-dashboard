@@ -8,6 +8,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       # Where the dev builder check reads *.pid / *.log / *.done (mounted below).
       BUILDER_LOGS_DIR: /logs
+      BUILDER_POLL_INTERVAL_MS: ${BUILDER_POLL_INTERVAL_MS:-30000}
     volumes:
       # Host builder logs dir, read-only. Defaults to ./logs (gitignored) so
       # compose works on a fresh clone; set BUILDER_LOGS_DIR in .env on the
