@@ -6,6 +6,13 @@ services:
       PORT: 3000
       # Used by Prisma; migrations are applied on container start.
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Where the dev builder check reads *.pid / *.log / *.done (mounted below).
+      BUILDER_LOGS_DIR: /logs
+    volumes:
+      # Host builder logs dir, read-only. Defaults to ./logs (gitignored) so
+      # compose works on a fresh clone; set BUILDER_LOGS_DIR in .env on the
+      # builder host. No GitHub token is passed in: see PLAN.md.
+      - ${BUILDER_LOGS_DIR:-./logs}:/logs:ro
     ports:
       # The dashboard's own dedicated host port (no reverse proxy).
       - "${DASHBOARD_PORT:-8090}:3000"

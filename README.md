@@ -61,6 +61,21 @@ npm run db:migrate     # prisma migrate dev: applies migrations, creates new one
 The rest of the API reads and writes status history through `api/src/db/snapshots.js`
 (`snapshots.record()`, `snapshots.latest()`, `snapshots.history()`).
 
+### Dev builder status
+
+`api/src/checks/builders.js` (`readBuilderStatus()`) reports the dev builders' state from the
+builder host's logs dir, which compose mounts read-only at `/logs` in the `api` container. Set
+`BUILDER_LOGS_DIR` in `.env` to that host dir; it defaults to `./logs` (gitignored) so compose
+starts on any machine.
+
+Jobs are discovered from `<job>.pid` files. A job with a matching `<job>.done` is idle; otherwise
+it's running, and the check returns the last non-blank line of `<job>.log` (tail only, truncated)
+and flags it `stale` if neither file has changed for 2 hours. The job name gives the target:
+`issue-4-codex` is the codex builder on issue #4, `review-10` is a review of PR #10. Other files
+(e.g. `wake.log`) are ignored.
+
+No GitHub token goes into the container, so open PR/issue counts aren't shown in v1.
+
 ### Angular app (dev server)
 
 ```sh
@@ -75,7 +90,7 @@ The default route shows a placeholder page. `npm run build` writes a production 
 ### Tests
 
 ```sh
-cd api && npm install && npm test   # node:test: GET /health plus snapshot store unit tests
+cd api && npm install && npm test   # node:test: GET /health, snapshot store and builder status unit tests
 cd web && npm install && npm test   # Angular unit tests (Vitest)
 ```
 
