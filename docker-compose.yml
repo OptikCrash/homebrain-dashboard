@@ -7,18 +7,14 @@ services:
       PORT: 3000
       # Used by Prisma; migrations are applied on container start.
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      # Where the dev builder check reads *.pid / *.log / *.done (mounted below).
-      BUILDER_LOGS_DIR: /logs
-      BUILDER_POLL_INTERVAL_MS: ${BUILDER_POLL_INTERVAL_MS:-30000}
+      TEAM_STATUS_DIR: /logs/status
       SYNCTHING_URL: ${SYNCTHING_URL:-http://host.docker.internal:8384}
       SYNCTHING_API_KEY: ${SYNCTHING_API_KEY:-}
       SYNCTHING_FOLDERS: ${SYNCTHING_FOLDERS:-}
       SYNCTHING_POLL_INTERVAL_MS: ${SYNCTHING_POLL_INTERVAL_MS:-30000}
     volumes:
-      # Host builder logs dir, read-only. Defaults to ./logs (gitignored) so
-      # compose works on a fresh clone; set BUILDER_LOGS_DIR in .env on the
-      # builder host. No GitHub token is passed in: see PLAN.md.
-      - ${BUILDER_LOGS_DIR:-./logs}:/logs:ro
+      # Host team roster and instance files, mounted read-only.
+      - ${TEAM_STATUS_DIR:-./logs/status}:/logs/status:ro
     ports:
       # The dashboard's own dedicated host port (no reverse proxy).
       - "${DASHBOARD_PORT:-8090}:3000"

@@ -128,66 +128,30 @@ npm run db:migrate     # prisma migrate dev: applies migrations, creates new one
 The rest of the API reads and writes status history through `api/src/db/snapshots.js`
 (`snapshots.record()`, `snapshots.latest()`, `snapshots.history()`).
 
-### Dev builder status
+### Dev team status
 
-`api/src/checks/builders.js` (`readBuilderStatus()`) reports the dev builders' state from the
-builder host's logs dir, which compose mounts read-only at `/logs` in the `api` container. Set
-`BUILDER_LOGS_DIR` in `.env` to that host dir; it defaults to `./logs` (gitignored) so compose
-starts on any machine.
+`GET /api/team/status` reads live files on each request and returns
+`{ roster, active, recent }`, without polling or PostgreSQL history.
+Compose mounts `TEAM_STATUS_DIR` (default `./logs/status`) read-only at `/logs/status`.
+Set it to the host's `$LOGS/status`. Outside Docker, the reader uses
+`TEAM_STATUS_DIR` directly, defaulting to `/logs/status`.
 
-Jobs are discovered from `<job>.pid` files. A job with a matching `<job>.done` is idle; otherwise
-it's running, and the check returns the last non-blank line of `<job>.log` (tail only, truncated)
-and flags it `stale` if neither file has changed for 2 hours. The job name gives the target:
-`issue-4-codex` is the codex builder on issue #4, `review-10` is a review of PR #10. Other files
-(e.g. `wake.log`) are ignored.
+The directory contains the `roles.json` roster array and `<Name>-<N>.json`
+instances described in PLAN.md. Roster entries retain their fields and add
+`status: "idle"` or `"active"`. `active` contains the highest-numbered instance
+per teammate, including a terminal instance until a newer one replaces it.
+Active rows expose only work metadata (identity, role, engine, kind, issue/PR,
+branch, phase, timestamps, and result); process IDs and host log paths are omitted.
+Only a non-terminal latest instance marks a roster entry active. `recent`
+contains the five newest terminal instances by `updated_at`, with
+`name`, `title`, `issue`, `pr`, `phase`, `result`, and `updated_at`.
 
-No GitHub token goes into the container, so open PR/issue counts aren't shown in v1.
-
-The API polls immediately on startup, then every `BUILDER_POLL_INTERVAL_MS` milliseconds
-(default `30000`, a positive integer). Slow polls finish before the next interval starts.
-Each poll writes one `StatusSnapshot` per discovered builder, using service keys such as
-`dev-builders:codex`. Idle and active builders are healthy; stale jobs are unhealthy.
-Jobs without a named builder use their job name as the identity (for example,
-`dev-builders:review-10`), preserving review PR targets and history.
-Previously seen builders missing from the logs, or an unreadable logs directory, produce
-unknown snapshots. Poll errors are logged and retried; shutdown waits for the active poll.
-
-`GET /api/status/builders` reads persisted snapshots and returns:
-
-```json
-{
-  "builders": [{
-    "name": "codex",
-    "current": {
-      "name": "codex",
-      "status": "healthy",
-      "state": "idle",
-      "available": true,
-      "jobs": [],
-      "recordedAt": "2026-10-22T12:00:00.000Z"
-    },
-    "history": [{
-      "name": "codex",
-      "status": "healthy",
-      "state": "idle",
-      "available": true,
-      "jobs": [],
-      "recordedAt": "2026-10-22T12:00:00.000Z"
-    }]
-  }]
-}
-```
-
-`history` contains the most recent 100 snapshots per builder, newest first, including
-`current` as its first entry. Each entry has the same shape as `current`; `jobs` contains
-that builder's reader job details (target, state, and activity/log details when running).
-An unavailable read also includes `error`. Builders are sorted by name. Before any builder
-has been discovered, the response is `{"builders":[]}`. Database failures return HTTP 503
-with `{"error":"Builder status unavailable"}`. The endpoint does not trigger a poll.
-Snapshots remain in Postgres across API restarts; automatic retention is not implemented.
-Service discovery groups names in Postgres, so polling and status requests transfer only
-one name per builder rather than fetching duplicate names from the full snapshot history.
-
+Missing directories return empty arrays; a missing roster returns an empty array.
+Malformed or unreadable instance files are skipped. Unexpected directory or roster
+read failures (including entries that are not objects with a non-empty string name)
+return HTTP 503 with `{ "error": "Team status unavailable" }`.
+The old `/api/status/builders` route is removed. Existing builder snapshots
+remain in PostgreSQL but are no longer read or written by the API.
 
 ### Syncthing health reader
 
@@ -234,14 +198,11 @@ npm install
 npm start          # ng serve, http://localhost:4200
 ```
 
-The default route shows the dashboard with the **Dev Builders** card. The card fetches
-`GET /api/status/builders` on load and then every 30 seconds, and shows each builder's state
-(idle/running/unknown, colored by health), the issue/PR and last log line of any running job, and
-a timeline strip of its recent history (green healthy, red unhealthy, grey unknown; hover a
-segment for its time range). If a refresh fails it keeps the last data and shows an error.
+The frontend still has the legacy **Dev Builders** card, which calls the removed
+`/api/status/builders` endpoint and will show an error until the separate frontend
+migration switches it to the team API.
 
-Next to it, the **Syncthing** card fetches `GET /api/status/syncthing` on the same 30-second
-cycle. It shows whether Syncthing is reachable (unknown if the check itself failed), how many
+The **Syncthing** card fetches `GET /api/status/syncthing` every 30 seconds. It shows whether Syncthing is reachable (unknown if the check itself failed), how many
 devices are connected, each configured folder's sync state, and the same kind of history strip.
 Folder errors, out-of-sync items/bytes and check errors are shown as red text under the folder or
 server row. The timeline helper both cards use lives in `web/src/app/shared/timeline.ts`.
@@ -249,13 +210,6 @@ server row. The timeline helper both cards use lives in `web/src/app/shared/time
 The dev server proxies `/api` to the API at `http://localhost:8090` (`web/proxy.conf.json`), so
 start the API with `docker compose up` first. If you changed `DASHBOARD_PORT`, change the proxy
 target to match.
-
-To watch it update, create a dummy job in the logs dir (`./logs` by default) and wait for a poll:
-
-```sh
-echo 1 > logs/issue-99-test.pid; echo "doing things" > logs/issue-99-test.log   # running
-touch logs/issue-99-test.done                                                     # idle
-```
 
 `npm run build` writes a production build to `web/dist/`.
 
@@ -271,7 +225,7 @@ skipped scripts, review them before adding them (`npm install-scripts ls` lists 
 ### Tests
 
 ```sh
-cd api && npm install && npm test   # node:test: GET /health, snapshot store and builder status unit tests
+cd api && npm install && npm test   # node:test: GET /health, snapshot store and team status unit tests
 cd web && npm install && npm test   # Angular unit tests (Vitest): home page, Dev Builders card, timeline strip
 ```
 

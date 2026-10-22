@@ -7,7 +7,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '../..');
 const composeAvailable = spawnSync('docker', ['compose', 'version']).status === 0;
 
-test('Compose reaches host services while preserving logs and database networking', {
+test('Compose reaches host services while preserving team status and database networking', {
   skip: !composeAvailable && 'Docker Compose is required to validate deployment configuration',
 }, () => {
   const config = JSON.parse(execFileSync('docker', [
@@ -18,7 +18,7 @@ test('Compose reaches host services while preserving logs and database networkin
       PATH: process.env.PATH,
       HOME: process.env.HOME,
       ...(process.env.DOCKER_CONFIG ? { DOCKER_CONFIG: process.env.DOCKER_CONFIG } : {}),
-      BUILDER_LOGS_DIR: '/tmp/homebrain-deployment-test-logs',
+      TEAM_STATUS_DIR: '/tmp/homebrain-deployment-test-status',
     },
     encoding: 'utf8',
   }));
@@ -28,8 +28,11 @@ test('Compose reaches host services while preserving logs and database networkin
     .match(/^SYNCTHING_URL=(.+)$/m)[1];
   assert.equal(exampleUrl, 'http://host.docker.internal:8384');
   assert.equal(api.environment.SYNCTHING_URL, exampleUrl);
-  assert.ok(api.volumes.some((volume) => volume.source === '/tmp/homebrain-deployment-test-logs'
-    && volume.target === '/logs' && volume.read_only === true));
+  assert.equal(api.environment.TEAM_STATUS_DIR, '/logs/status');
+  assert.equal(api.environment.BUILDER_LOGS_DIR, undefined);
+  assert.equal(api.environment.BUILDER_POLL_INTERVAL_MS, undefined);
+  assert.ok(api.volumes.some((volume) => volume.source === '/tmp/homebrain-deployment-test-status'
+    && volume.target === '/logs/status' && volume.read_only === true));
   assert.equal(new URL(api.environment.DATABASE_URL).hostname, 'postgres');
   assert.equal(api.depends_on.postgres.condition, 'service_healthy');
   assert.deepEqual(api.networks, postgres.networks);
