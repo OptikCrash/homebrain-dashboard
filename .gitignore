@@ -1,0 +1,22 @@
+# Secrets: never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+coverage/
+npm-debug.log*
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code personal settings
+.claude/settings.local.json
