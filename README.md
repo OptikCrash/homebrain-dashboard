@@ -29,6 +29,9 @@ npm run frontend   # Angular dev server (npm --prefix web start)
 npm run all        # both at once; Ctrl-C stops both
 ```
 
+On the Home Brain host, `npm run backend:homebrain` and `npm run all:homebrain` do the same with
+the [Home Brain override](#home-brain-deployment) applied; the plain scripts stay portable.
+
 `npm run all` runs `scripts/dev-all.sh`, a plain POSIX `sh` script, so the root `package.json` has
 no dependencies (no `npm-run-all`/`concurrently`). It starts both in the background and, on Ctrl-C
 or SIGTERM, sends SIGTERM to both and waits for them to exit (compose stops its containers;
@@ -96,7 +99,13 @@ DASHBOARD_PORT=8090
 Run from the repository root:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.homebrain.yml up -d --build
+npm run backend:homebrain   # foreground; add the Angular dev server with npm run all:homebrain
+```
+
+The manual equivalent (add `-d` to run it detached):
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.homebrain.yml up --build
 ```
 
 The override sets `SYNCTHING_URL=http://127.0.0.1:8384` and publishes Postgres only
