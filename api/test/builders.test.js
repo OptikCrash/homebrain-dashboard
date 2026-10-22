@@ -57,3 +57,31 @@ test('unexpected filesystem errors are surfaced', async () => {
   await mkdir(path.join(logs, 'claude.log'));
   await assert.rejects(readBuilderStatus(logs), { code: 'EISDIR' });
 });
+
+test('discovers additional builders and retains idle builders from old logs', async () => {
+  await writeFile(path.join(logs, 'other.pid'), '456');
+  await writeFile(path.join(logs, 'other.log'), 'busy\n');
+  await writeFile(path.join(logs, 'retired.log'), 'finished\n');
+  await mkdir(path.join(logs, 'directory.pid'));
+  await writeFile(path.join(logs, 'ignored.txt'), 'unrelated');
+  const statuses = await readBuilderStatus(logs);
+  assert.deepEqual(statuses.map((b) => b.name), ['claude', 'codex', 'other', 'retired']);
+  assert.deepEqual(statuses[2], { name: 'other', status: 'running', lastLogLine: 'busy' });
+  assert.deepEqual(statuses[3], { name: 'retired', status: 'idle', lastLogLine: null });
+  await rm(path.join(logs, 'other.pid'));
+  assert.deepEqual((await readBuilderStatus(logs))[2], {
+    name: 'other', status: 'idle', lastLogLine: null,
+  });
+});
+
+test('caps huge newline-free logs and preserves UTF-8 at the boundary', async () => {
+  await writeFile(path.join(logs, 'codex.pid'), '123');
+  await writeFile(path.join(logs, 'codex.log'), '€'.repeat(100000));
+  assert.equal((await readBuilderStatus(logs))[1].lastLogLine, '€'.repeat(21845));
+});
+
+test('reads a short last line after huge log content', async () => {
+  await writeFile(path.join(logs, 'codex.pid'), '123');
+  await writeFile(path.join(logs, 'codex.log'), `${'x'.repeat(1000000)}\nworking\n`);
+  assert.equal((await readBuilderStatus(logs))[1].lastLogLine, 'working');
+});
