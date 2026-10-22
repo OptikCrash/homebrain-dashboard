@@ -8,6 +8,7 @@ services:
       PORT: ${DASHBOARD_PORT:-8090}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:5434/${POSTGRES_DB}
       SYNCTHING_URL: http://127.0.0.1:8384
+      COUCHDB_URL: ${COUCHDB_URL:-http://127.0.0.1:5984}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${PORT}/health"]
 
