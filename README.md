@@ -16,7 +16,8 @@ See `PLAN.md` for goals and milestones.
 
 ## Running locally
 
-Requirements: Docker with Compose v2, and Node.js 20+ for the Angular app.
+Requirements: Docker with Compose v2, and Node.js `^20.19.0 || ^22.12.0 || ^24.0.0` (the range Angular 21
+supports) for the Angular app and for running the API tests locally.
 
 ### API + Postgres (Docker)
 

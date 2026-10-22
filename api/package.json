@@ -5,12 +5,12 @@
   "description": "Express API for the Home Brain status dashboard",
   "main": "src/server.js",
   "engines": {
-    "node": ">=20"
+    "node": "^20.19.0 || ^22.12.0 || ^24.0.0"
   },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test test/"
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "express": "^5.1.0"
