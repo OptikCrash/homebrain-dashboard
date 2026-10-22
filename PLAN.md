@@ -14,6 +14,17 @@ status plus history over time (e.g. "Syncthing was down for 2h yesterday").
 - No auth decided yet for v1 (LAN-only assumption); revisit before exposing
   outside the LAN.
 
+## Stack details
+- Single repo, Angular app and Express API as subfolders (as now).
+- Dockerized: API + Postgres run in containers (Dockerfile + docker-compose).
+- ORM: Prisma (Chris wants to try it; schema is simple enough that the
+  learning curve is low-risk here).
+- History/incident timelines: simple built-in rendering (colored timeline
+  strip per service, no charting library) for v1. Revisit a charting lib
+  (e.g. Chart.js) only if a later milestone needs real trend graphs
+  (durations, counts over time) that a strip can't express.
+- Network exposure: dashboard gets its own dedicated port, no reverse proxy.
+
 ## Health signals per service
 - **Dev builder status**: read from this box — `$LOGS/*.pid` (running/idle)
   and `$LOGS/<name>.log` tail for what a running builder is doing, plus open
@@ -65,6 +76,9 @@ Acceptance criteria:
   lowest risk, good scaffold for the rest).
 - History is in scope from v1 (not just live status) — backed by Postgres.
 - Auth is explicitly deferred, not decided for v1.
+- Stack: single repo, Dockerized API + Postgres, Prisma as ORM, no charting
+  library for v1 (simple timeline strips instead), dashboard on its own
+  dedicated port (no reverse proxy).
 
 ## Open questions
 - How exactly is the restic backup job invoked/logged (cron, systemd timer,
