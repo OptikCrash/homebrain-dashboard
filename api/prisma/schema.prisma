@@ -1,0 +1,32 @@
+// Prisma schema for the Home Brain dashboard API.
+// Connection string comes from the DATABASE_URL env var; never hard-code it here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ServiceStatus {
+  healthy
+  unhealthy
+  unknown
+}
+
+// One health reading for one service at one point in time. Every poll writes a
+// row, so the dashboard can show history/incident timelines, not just "now".
+model StatusSnapshot {
+  id         Int           @id @default(autoincrement())
+  // Service key, e.g. "dev-builders", "syncthing", "livesync", "backups", "chopper".
+  service    String
+  status     ServiceStatus
+  // Free-form, per-service details (builder states, folder sync info, ...).
+  detail     Json?
+  recordedAt DateTime      @default(now()) @map("recorded_at")
+
+  @@index([service, recordedAt])
+  @@map("status_snapshots")
+}

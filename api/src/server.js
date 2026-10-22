@@ -1,4 +1,5 @@
 const { createApp } = require('./app');
+const { disconnectPrisma } = require('./db/prisma');
 
 const port = Number(process.env.PORT) || 3000;
 
@@ -9,6 +10,9 @@ const server = createApp().listen(port, () => {
 // Let `docker compose down` stop the container promptly.
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
-    server.close(() => process.exit(0));
+    server.close(async () => {
+      await disconnectPrisma();
+      process.exit(0);
+    });
   });
 }

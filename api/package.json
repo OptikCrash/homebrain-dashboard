@@ -10,9 +10,15 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy"
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "@prisma/client": "^6.16.0",
+    "express": "^5.1.0",
+    "prisma": "^6.16.0"
   }
 }
