@@ -12,6 +12,8 @@ services:
       SYNCTHING_API_KEY: ${SYNCTHING_API_KEY:-}
       SYNCTHING_FOLDERS: ${SYNCTHING_FOLDERS:-}
       SYNCTHING_POLL_INTERVAL_MS: ${SYNCTHING_POLL_INTERVAL_MS:-30000}
+      COUCHDB_URL: ${COUCHDB_URL:-http://host.docker.internal:5984}
+      COUCHDB_POLL_INTERVAL_MS: ${COUCHDB_POLL_INTERVAL_MS:-30000}
     volumes:
       # Host team roster and instance files, mounted read-only.
       - ${TEAM_STATUS_DIR:-./logs/status}:/logs/status:ro

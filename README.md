@@ -219,6 +219,26 @@ check. Storage/read failures return HTTP 503 with
 `{ "error": "Syncthing status unavailable" }`. History survives API restarts;
 automatic retention is not implemented.
 
+### CouchDB status service
+
+The API polls CouchDB immediately on startup, then waits
+`COUCHDB_POLL_INTERVAL_MS` (default `30000`, a positive integer) after each
+completed poll. Polls never overlap; shutdown waits for active polls. Configure
+`COUCHDB_URL` in the environment; Compose passes both settings through.
+
+Each poll persists a `StatusSnapshot` under service `couchdb`. Reachable
+readings (HTTP 200 or 401) are healthy; unreachable readings are unhealthy.
+Unexpected check exceptions record unknown with a safe error and retry on
+the next interval.
+
+`GET /api/status/couchdb` reads persisted data without triggering a check.
+It returns `{ "current": null, "history": [] }` before the first poll, then
+the newest snapshot and up to 100 snapshots newest first, including current.
+Snapshots contain `status`, `recordedAt`, and reachability/error details when
+available. Storage/read failures return HTTP 503 with
+`{ "error": "CouchDB status unavailable" }`. History survives API restarts;
+automatic retention is not implemented.
+
 ### Angular app (dev server)
 
 ```sh
