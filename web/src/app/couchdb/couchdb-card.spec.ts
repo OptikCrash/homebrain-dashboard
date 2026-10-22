@@ -136,6 +136,16 @@ describe('CouchdbCard', () => {
     expect(element.querySelector('.meaning')?.textContent).toBe("Red: CouchDB didn't answer GET /_up.");
   });
 
+  it('labels the strip with the span a full API response really covers, not 24 hours', () => {
+    // The API sends at most 100 snapshots, polled every 30s by default.
+    const now = Date.now();
+    const history = Array.from({ length: 100 }, (_, i) => snapshot({ recordedAt: new Date(now - i * 30_000).toISOString() }));
+    http.expectOne(URL).flush({ current: history[0], history } satisfies CouchdbResponse);
+    fixture.detectChanges();
+
+    expect(element.querySelector('.history .label')?.textContent).toBe('History — last 49 minutes');
+  });
+
   it('refreshes on the interval and reflects the new state', () => {
     http.expectOne(URL).flush(response(snapshot()));
     fixture.detectChanges();

@@ -64,3 +64,17 @@ export function timelineSegments(
   }
   return segments;
 }
+
+// Names the span the strip really covers. The API sends only its newest
+// snapshots (100 at the time of writing, ~50 minutes at the default 30s poll), so
+// the strip often reaches back less than the full window; the label must say so
+// rather than claim 24 hours. Rounds down so it never overstates.
+export function historyLabel(segments: TimelineSegment[], windowMs: number = HISTORY_WINDOW_MS): string {
+  if (segments.length === 0) return 'History';
+  const covered = Math.min(segments[segments.length - 1].end.getTime() - segments[0].start.getTime(), windowMs);
+  const hours = Math.floor(covered / 3_600_000);
+  if (hours >= 2) return `History — last ${hours} hours`;
+  const minutes = Math.floor(covered / 60_000);
+  if (minutes >= 2) return `History — last ${minutes} minutes`;
+  return 'History — last minute';
+}

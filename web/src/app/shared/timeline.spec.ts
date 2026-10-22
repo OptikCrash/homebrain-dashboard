@@ -1,4 +1,4 @@
-import { timelineSegments } from './timeline';
+import { historyLabel, timelineSegments } from './timeline';
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 9, 22, 12, minutes)).toISOString();
 
@@ -102,5 +102,45 @@ describe('timelineSegments', () => {
       new Date(at(10)),
     );
     expect(segments.map((s) => s.status)).toEqual(['unhealthy']);
+  });
+});
+
+describe('historyLabel', () => {
+  const minute = 60_000;
+  const now = Date.UTC(2026, 9, 22, 12);
+  // Newest first, one snapshot every `intervalMs`, the newest taken at `now`.
+  const polls = (count: number, intervalMs: number) =>
+    Array.from({ length: count }, (_, i) => ({
+      status: 'healthy',
+      recordedAt: new Date(now - i * intervalMs).toISOString(),
+    }));
+
+  it('says "last 24 hours" only when the history reaches back the whole window', () => {
+    const segments = timelineSegments(polls(30, 60 * minute), new Date(now));
+    expect(historyLabel(segments)).toBe('History — last 24 hours');
+  });
+
+  // Pinned to the API: GET /api/status/{couchdb,syncthing} return at most
+  // HISTORY_LIMIT = 100 snapshots (api/src/status/*.js), polled every 30s by
+  // default: about 50 minutes, nowhere near 24 hours.
+  it('labels the coverage the API actually sends at its history limit', () => {
+    const API_HISTORY_LIMIT = 100;
+    const API_POLL_INTERVAL_MS = 30_000;
+    const segments = timelineSegments(polls(API_HISTORY_LIMIT, API_POLL_INTERVAL_MS), new Date(now));
+    expect(historyLabel(segments)).toBe('History — last 49 minutes');
+  });
+
+  it('rounds down to whole hours, never overstating', () => {
+    const segments = timelineSegments(polls(2, (23 * 60 + 59) * minute), new Date(now));
+    expect(historyLabel(segments)).toBe('History — last 23 hours');
+  });
+
+  it('uses minutes under two hours and "last minute" for a fresh history', () => {
+    expect(historyLabel(timelineSegments(polls(2, 90 * minute), new Date(now)))).toBe('History — last 90 minutes');
+    expect(historyLabel(timelineSegments(polls(1, minute), new Date(now)))).toBe('History — last minute');
+  });
+
+  it('falls back to a plain label with no segments', () => {
+    expect(historyLabel([])).toBe('History');
   });
 });

@@ -1,6 +1,6 @@
 import { DatePipe } from '@angular/common';
-import { Component, input } from '@angular/core';
-import { TimelineSegment } from './timeline';
+import { Component, computed, input } from '@angular/core';
+import { TimelineSegment, historyLabel } from './timeline';
 
 // The colours a strip can show, in legend order. Any other status draws grey,
 // like 'unknown'.
@@ -10,14 +10,14 @@ const LEGEND = [
   { status: 'unknown', label: 'Unknown (check failed)' },
 ];
 
-// A service's status history over the last 24 hours, as a labelled strip of
+// A service's status history over (at most) the last 24 hours, as a labelled strip of
 // segments with a legend. Hovering a segment shows its status and time span.
 @Component({
   selector: 'app-history-strip',
   imports: [DatePipe],
   template: `
     <figure class="history">
-      <figcaption class="label">History — last 24 hours</figcaption>
+      <figcaption class="label">{{ label() }}</figcaption>
       <div class="strip" role="img" [attr.aria-label]="ariaLabel()">
         @for (segment of segments(); track segment.start.getTime()) {
           <span
@@ -102,4 +102,6 @@ export class HistoryStrip {
   readonly unhealthyMeaning = input.required<string>();
 
   protected readonly legend = LEGEND;
+  // Up to 24 hours, but only as far back as the history actually reaches.
+  protected readonly label = computed(() => historyLabel(this.segments()));
 }
