@@ -33,6 +33,66 @@ describe('timelineSegments', () => {
     expect(segments[0].percent).toBe(100);
   });
 
+  describe('window', () => {
+    const hours = (h: number) => new Date(Date.UTC(2026, 9, 22, 12) + h * 3_600_000).toISOString();
+
+    it('drops snapshots older than 24 hours by default and cuts the one holding at the window start', () => {
+      // Spans 48 hours; the window is 12:00 on the 21st → 12:00 on the 22nd.
+      const history = [
+        { status: 'healthy', recordedAt: hours(-6) },
+        { status: 'unhealthy', recordedAt: hours(-30) },
+        { status: 'unknown', recordedAt: hours(-40) },
+        { status: 'healthy', recordedAt: hours(-48) },
+      ];
+
+      const segments = timelineSegments(history, new Date(hours(0)));
+
+      expect(segments.map((s) => [s.status, s.percent])).toEqual([
+        ['unhealthy', 75],
+        ['healthy', 25],
+      ]);
+      // The tooltip's start time is the window's start, not the 30-hour-old snapshot.
+      expect(segments[0].start.toISOString()).toBe(hours(-24));
+      expect(segments[0].end.toISOString()).toBe(hours(-6));
+      expect(segments[1].end.toISOString()).toBe(hours(0));
+    });
+
+    it('keeps a snapshot recorded exactly at the window start', () => {
+      const segments = timelineSegments(
+        [
+          { status: 'unhealthy', recordedAt: hours(-24) },
+          { status: 'healthy', recordedAt: hours(-30) },
+        ],
+        new Date(hours(0)),
+      );
+      expect(segments.map((s) => s.status)).toEqual(['unhealthy']);
+      expect(segments[0].start.toISOString()).toBe(hours(-24));
+    });
+
+    it('carries a status older than the window across all of it', () => {
+      const segments = timelineSegments([{ status: 'healthy', recordedAt: hours(-30) }], new Date(hours(0)));
+      expect(segments).toHaveLength(1);
+      expect(segments[0].start.toISOString()).toBe(hours(-24));
+      expect(segments[0].percent).toBe(100);
+    });
+
+    it('takes a custom window', () => {
+      const segments = timelineSegments(
+        [
+          { status: 'healthy', recordedAt: hours(-1) },
+          { status: 'unhealthy', recordedAt: hours(-3) },
+        ],
+        new Date(hours(0)),
+        2 * 3_600_000,
+      );
+      expect(segments.map((s) => [s.status, s.percent])).toEqual([
+        ['unhealthy', 50],
+        ['healthy', 50],
+      ]);
+      expect(segments[0].start.toISOString()).toBe(hours(-2));
+    });
+  });
+
   it('ignores snapshots with unparseable timestamps', () => {
     const segments = timelineSegments(
       [

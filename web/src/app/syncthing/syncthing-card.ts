@@ -2,6 +2,7 @@ import { DatePipe } from '@angular/common';
 import { Component, DestroyRef, OnInit, computed, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, interval, map, of, startWith, switchMap } from 'rxjs';
+import { HistoryStrip } from '../shared/history-strip';
 import { timelineSegments } from '../shared/timeline';
 import { SyncthingFolder, SyncthingResponse, SyncthingStatus } from './syncthing-status';
 
@@ -14,7 +15,7 @@ const DEFAULT_REFRESH_MS = 30_000;
 // of its recent history.
 @Component({
   selector: 'app-syncthing-card',
-  imports: [DatePipe],
+  imports: [DatePipe, HistoryStrip],
   template: `
     <section class="card">
       <header>
@@ -62,16 +63,13 @@ const DEFAULT_REFRESH_MS = 30_000;
           <p class="empty">No Syncthing status recorded yet.</p>
         }
 
-        <div class="strip" role="img" aria-label="Syncthing history">
-          @for (segment of v.segments; track segment.start.getTime()) {
-            <span
-              class="segment"
-              [attr.data-status]="segment.status"
-              [style.width.%]="segment.percent"
-              [title]="segment.status + ': ' + (segment.start | date: 'short') + ' – ' + (segment.end | date: 'short')"
-            ></span>
-          }
-        </div>
+        @if (v.segments.length) {
+          <app-history-strip
+            [segments]="v.segments"
+            ariaLabel="Syncthing history"
+            unhealthyMeaning="Red: Syncthing unreachable, or a folder with errors or out of sync."
+          />
+        }
       } @else if (!error()) {
         <p class="empty">Loading…</p>
       }
@@ -146,23 +144,6 @@ const DEFAULT_REFRESH_MS = 30_000;
     .folder-id {
       font-family: ui-monospace, monospace;
       font-size: 0.9rem;
-    }
-    .strip {
-      display: flex;
-      height: 0.6rem;
-      margin-top: 0.75rem;
-      border-radius: 3px;
-      overflow: hidden;
-      background: #eaeef2;
-    }
-    .segment {
-      background: #8c959f;
-    }
-    .segment[data-status='healthy'] {
-      background: #2da44e;
-    }
-    .segment[data-status='unhealthy'] {
-      background: #cf222e;
     }
   `,
 })

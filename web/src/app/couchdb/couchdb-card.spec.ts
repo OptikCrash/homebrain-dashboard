@@ -113,6 +113,29 @@ describe('CouchdbCard', () => {
     expect(element.querySelector('.strip')?.getAttribute('aria-label')).toBe('CouchDB history');
   });
 
+  it('labels the strip as the last 24 hours, drops older history and explains red', () => {
+    const now = Date.now();
+    const hoursAgo = (h: number) => new Date(now - h * 3_600_000).toISOString();
+    http.expectOne(URL).flush({
+      current: snapshot({ recordedAt: hoursAgo(6) }),
+      history: [
+        snapshot({ recordedAt: hoursAgo(6) }),
+        snapshot({ status: 'unhealthy', reachable: false, recordedAt: hoursAgo(30) }),
+        snapshot({ status: 'unknown', reachable: undefined, recordedAt: hoursAgo(40) }),
+      ],
+    } satisfies CouchdbResponse);
+    fixture.detectChanges();
+
+    expect(element.querySelector('.history .label')?.textContent).toBe('History — last 24 hours');
+    const segments = element.querySelectorAll<HTMLElement>('.strip .segment');
+    expect(Array.from(segments, (s) => s.dataset['status'])).toEqual(['unhealthy', 'healthy']);
+    expect(segments[0].style.width).toBe('75%');
+
+    const legend = Array.from(element.querySelectorAll('.legend li'), (li) => li.textContent?.trim());
+    expect(legend).toEqual(['Healthy', 'Unhealthy', 'Unknown (check failed)']);
+    expect(element.querySelector('.meaning')?.textContent).toBe("Red: CouchDB didn't answer GET /_up.");
+  });
+
   it('refreshes on the interval and reflects the new state', () => {
     http.expectOne(URL).flush(response(snapshot()));
     fixture.detectChanges();
@@ -145,6 +168,6 @@ describe('CouchdbCard', () => {
 
     expect(element.querySelector('.empty')?.textContent).toContain('No CouchDB status recorded yet');
     expect(element.querySelector('.badge')).toBeNull();
-    expect(element.querySelectorAll('.strip .segment')).toHaveLength(0);
+    expect(element.querySelector('app-history-strip')).toBeNull();
   });
 });

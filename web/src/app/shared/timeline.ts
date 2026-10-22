@@ -14,15 +14,30 @@ export interface TimelineSegment {
   percent: number;
 }
 
+// How far back the strip reaches.
+export const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 // Each snapshot holds until the next one; the newest holds until `now`, so a
 // service that has been unhealthy since the last poll shows up as such. Runs of
 // the same status are merged. `history` may be in any order (the API sends it
-// newest first).
-export function timelineSegments(history: TimelinePoint[], now: Date = new Date()): TimelineSegment[] {
-  const points = history
+// newest first). Only the last `windowMs` before `now` is kept: older snapshots
+// are dropped, and one still holding at the window's start is cut to begin there.
+export function timelineSegments(
+  history: TimelinePoint[],
+  now: Date = new Date(),
+  windowMs: number = HISTORY_WINDOW_MS,
+): TimelineSegment[] {
+  const windowStart = now.getTime() - windowMs;
+  const sorted = history
     .map((point) => ({ status: point.status, time: new Date(point.recordedAt).getTime() }))
     .filter((point) => !Number.isNaN(point.time))
     .sort((a, b) => a.time - b.time);
+  // The newest snapshot at or before the window's start still holds there.
+  let firstKept = 0;
+  while (firstKept + 1 < sorted.length && sorted[firstKept + 1].time <= windowStart) firstKept++;
+  const points = sorted
+    .slice(firstKept)
+    .map((point) => ({ status: point.status, time: Math.max(point.time, windowStart) }));
   if (points.length === 0) return [];
 
   const first = points[0].time;
