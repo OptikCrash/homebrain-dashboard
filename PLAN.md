@@ -131,6 +131,28 @@ Acceptance criteria:
 - Reuses `docker-compose.homebrain.yml`'s host networking (same loopback
   situation as Syncthing) — no new compose work expected.
 
+### M4.1 — Dashboard polish (Active work + history strips)
+Feedback from Chris after M2–M4 landed. Acceptance criteria:
+- **Active work card**: only shows jobs currently in a non-terminal phase
+  (`starting`/`building`/`pushing`/`reviewing`). A teammate's finished
+  (terminal-phase) instance no longer appears here — it only shows under
+  "Recent", as already rendered. When nobody is active, the existing empty
+  state ("Nobody is working on anything right now.") is what's shown.
+  Root cause: `api/src/status/team.js`'s `active` list isn't filtered by
+  phase; it needs the same `nonTerminal` filter already used for roster
+  status.
+- **History strips** (Syncthing + CouchDB cards): extract the duplicated
+  strip markup into one shared component/template fed by `shared/timeline.ts`.
+  - Strip is labeled, e.g. "History — last 24 hours".
+  - `timelineSegments` takes a window (default 24h) and clips to it —
+    segments older than the window are dropped, not just unlabeled.
+  - Hover already shows a segment's status + start/end time (`title` attr);
+    keep that, verify it reads clearly once segments are clipped.
+  - A short legend under the strip: each status color in use, plus one line
+    specific to that service's "red" (unreachable/unhealthy) meaning, e.g.
+    "red = CouchDB didn't answer `GET /_up`" / "red = Syncthing unreachable
+    or a folder out of sync".
+
 ### M5 — Backups (restic)
 - Backups card: recent run list with outcome + timestamp; in-progress
   indicator if a backup is running.
