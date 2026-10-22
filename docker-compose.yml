@@ -2,6 +2,7 @@ services:
   api:
     build: ./api
     restart: unless-stopped
+    extra_hosts: ["host.docker.internal:host-gateway"]
     environment:
       PORT: 3000
       # Used by Prisma; migrations are applied on container start.
@@ -9,7 +10,7 @@ services:
       # Where the dev builder check reads *.pid / *.log / *.done (mounted below).
       BUILDER_LOGS_DIR: /logs
       BUILDER_POLL_INTERVAL_MS: ${BUILDER_POLL_INTERVAL_MS:-30000}
-      SYNCTHING_URL: ${SYNCTHING_URL:-http://syncthing:8384}
+      SYNCTHING_URL: ${SYNCTHING_URL:-http://host.docker.internal:8384}
       SYNCTHING_API_KEY: ${SYNCTHING_API_KEY:-}
       SYNCTHING_FOLDERS: ${SYNCTHING_FOLDERS:-}
       SYNCTHING_POLL_INTERVAL_MS: ${SYNCTHING_POLL_INTERVAL_MS:-30000}

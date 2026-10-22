@@ -43,6 +43,53 @@ curl -i http://localhost:8090/health
 
 Stop with `docker compose down` (add `-v` to also delete the Postgres volume).
 
+### Reaching host-bound services
+
+Inside a container, `127.0.0.1` refers to that container, not the host. A host
+service listening only on `127.0.0.1` cannot accept connections addressed to
+its Docker bridge gateway either: this is a TCP binding issue, not a firewall issue.
+
+Compose maps `host.docker.internal` to `host-gateway` inside `api`, making the
+host reachable by name. This requires Docker Engine 20.10+ on Linux; Docker
+Desktop is not required. The mapping itself needs no host firewall change and
+keeps the existing Compose network and Postgres connection in place.
+
+**Chris must also change Syncthing on the host.** In Syncthing's `config.xml`,
+change the GUI/API listen-address line from:
+
+```xml
+<gui address="127.0.0.1:8384" ...>
+```
+
+to:
+
+```xml
+<gui address="0.0.0.0:8384" ...>
+```
+
+The `...` represents the existing attributes; preserve those and the GUI's
+contents. Restart Syncthing after editing. Alternatively, bind to the specific
+Docker bridge gateway IP for this Compose project, provided it is reachable
+through the configured host mapping. To inspect the address the API uses:
+
+```sh
+docker compose exec api getent hosts host.docker.internal
+```
+
+If that address differs from the project's bridge gateway, use the reachable
+gateway IP explicitly in `SYNCTHING_URL` when binding only to that interface.
+Binding to `0.0.0.0` listens on all host interfaces. If LAN access to port 8384
+is unwanted, configure the host firewall to block LAN access while allowing
+the API container to connect. Syncthing's API key provides another layer of
+protection; set `SYNCTHING_API_KEY` from its GUI settings.
+
+After the host change, use `SYNCTHING_URL=http://host.docker.internal:8384`
+(the default in `.env.example` and Compose) and recreate `api` to apply the
+configuration (`docker compose up -d api`). Host config edits, Syncthing restarts,
+and firewall changes must be performed on the real host, outside a builder sandbox.
+The same binding requirement applies to LiveSync/CouchDB if its host service
+also listens only on loopback; use its own reachable listen address and port.
+
 ### Database (Prisma)
 
 The schema lives in `api/prisma/schema.prisma` and migrations in `api/prisma/migrations/`. The
