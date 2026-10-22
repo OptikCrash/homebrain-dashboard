@@ -1,6 +1,5 @@
 const { readSyncthingStatus } = require('../checks/syncthing');
 const { snapshots } = require('../db/snapshots');
-const { startBuilderPolling } = require('./builders');
 
 const SERVICE = 'syncthing';
 const HISTORY_LIMIT = 100;
@@ -52,8 +51,21 @@ function createSyncthingStatus({ store = snapshots, read = readSyncthingStatus }
 }
 
 function startSyncthingPolling({ poll, intervalMs = pollingInterval(), onError = console.error }) {
-  // Share the completion-based scheduler, including retry and shutdown draining.
-  return startBuilderPolling({ poll, intervalMs: pollingInterval(intervalMs), onError });
+  intervalMs = pollingInterval(intervalMs);
+  let stopped = false;
+  let timer;
+  let pending;
+  function run() {
+    pending = Promise.resolve().then(poll).catch(onError).finally(() => {
+      if (!stopped) timer = setTimeout(run, intervalMs);
+    });
+  }
+  run();
+  return async function stop() {
+    stopped = true;
+    clearTimeout(timer);
+    await pending;
+  };
 }
 
 module.exports = { createSyncthingStatus, startSyncthingPolling, pollingInterval };
