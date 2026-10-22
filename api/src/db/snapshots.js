@@ -44,7 +44,17 @@ function createSnapshotStore(prisma) {
     return row ?? null;
   }
 
-  return { record, history, latest };
+  async function services(prefix) {
+    const rows = await prisma.statusSnapshot.findMany({
+      where: { service: { startsWith: prefix } },
+      distinct: ['service'],
+      select: { service: true },
+      orderBy: { service: 'asc' },
+    });
+    return rows.map((row) => row.service);
+  }
+
+  return { record, history, latest, services };
 }
 
 // Lazily bound to the shared client so importing this module never opens a
