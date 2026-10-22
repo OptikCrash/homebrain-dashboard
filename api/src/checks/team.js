@@ -10,6 +10,10 @@ async function readTeamRoster({ statusDir = statusDirectory() } = {}) {
   try {
     const roster = JSON.parse(await fs.readFile(path.join(statusDir, 'roles.json'), 'utf8'));
     if (!Array.isArray(roster)) throw new TypeError('Team roster must be an array');
+    if (roster.some((member) => !member || typeof member !== 'object'
+      || Array.isArray(member) || typeof member.name !== 'string' || !member.name.trim())) {
+      throw new TypeError('Team roster entries must be objects with a non-empty name');
+    }
     return roster;
   } catch (error) {
     if (error.code === 'ENOENT') return [];

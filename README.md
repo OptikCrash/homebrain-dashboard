@@ -140,13 +140,16 @@ The directory contains the `roles.json` roster array and `<Name>-<N>.json`
 instances described in PLAN.md. Roster entries retain their fields and add
 `status: "idle"` or `"active"`. `active` contains the highest-numbered instance
 per teammate, including a terminal instance until a newer one replaces it.
+Active rows expose only work metadata (identity, role, engine, kind, issue/PR,
+branch, phase, timestamps, and result); process IDs and host log paths are omitted.
 Only a non-terminal latest instance marks a roster entry active. `recent`
 contains the five newest terminal instances by `updated_at`, with
 `name`, `title`, `issue`, `pr`, `phase`, `result`, and `updated_at`.
 
 Missing directories return empty arrays; a missing roster returns an empty array.
 Malformed or unreadable instance files are skipped. Unexpected directory or roster
-read failures return HTTP 503 with `{ "error": "Team status unavailable" }`.
+read failures (including entries that are not objects with a non-empty string name)
+return HTTP 503 with `{ "error": "Team status unavailable" }`.
 The old `/api/status/builders` route is removed. Existing builder snapshots
 remain in PostgreSQL but are no longer read or written by the API.
 

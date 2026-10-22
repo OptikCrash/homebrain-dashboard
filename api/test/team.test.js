@@ -98,7 +98,7 @@ test('endpoint masks roster failures and recovers after the roster is repaired',
   t.after(() => new Promise((resolve) => server.close(resolve)));
   await new Promise((resolve) => server.once('listening', resolve));
   const url = `http://127.0.0.1:${server.address().port}/api/team/status`;
-  for (const contents of ['private malformed roster', '{}']) {
+  for (const contents of ['private malformed roster', '{}', '[null]', '["Zeb"]', '[[]]', '[{}]', '[{"name":23}]', '[{"name":" "}]']) {
     await fs.writeFile(path.join(statusDir, 'roles.json'), contents);
     const response = await fetch(url);
     assert.equal(response.status, 503);
@@ -134,4 +134,19 @@ test('endpoint skips bad instances, tolerates missing directory, removes old rou
   response = await fetch(`${base}/api/team/status`);
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: 'Team status unavailable' });
+});
+
+
+test('endpoint exposes only public active work fields', async (t) => {
+  const { status, write } = await fixture(t);
+  const publicJob = { ...job('Zeb'), engine: 'codex', kind: 'build',
+    branch: 'issue-23-zeb', started_at: '2026-10-22T17:00:00Z' };
+  await write('Zeb-1.json', { ...publicJob, pid: 1234,
+    log: '/private/host/work.log', futurePrivateField: 'private' });
+  const server = createApp({ teamStatus: status }).listen(0);
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve) => server.once('listening', resolve));
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/team/status`);
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).active, [publicJob]);
 });
