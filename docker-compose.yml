@@ -12,7 +12,7 @@ services:
       - "${DASHBOARD_PORT:-8090}:3000"
     volumes:
       - type: bind
-        source: /opt/data/work/logs
+        source: ${BUILDER_LOGS_DIR:-/opt/data/work/logs}
         target: /var/log/builders
         read_only: true
         bind:
