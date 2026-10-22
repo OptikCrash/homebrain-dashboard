@@ -173,6 +173,12 @@ The default route shows the dashboard with the **Dev Builders** card. The card f
 a timeline strip of its recent history (green healthy, red unhealthy, grey unknown; hover a
 segment for its time range). If a refresh fails it keeps the last data and shows an error.
 
+Next to it, the **Syncthing** card fetches `GET /api/status/syncthing` on the same 30-second
+cycle. It shows whether Syncthing is reachable (unknown if the check itself failed), how many
+devices are connected, each configured folder's sync state, and the same kind of history strip.
+Folder errors, out-of-sync items/bytes and check errors are shown as red text under the folder or
+server row. The timeline helper both cards use lives in `web/src/app/shared/timeline.ts`.
+
 The dev server proxies `/api` to the API at `http://localhost:8090` (`web/proxy.conf.json`), so
 start the API with `docker compose up` first. If you changed `DASHBOARD_PORT`, change the proxy
 target to match.

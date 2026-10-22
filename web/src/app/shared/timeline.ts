@@ -1,4 +1,4 @@
-// Turns a builder's snapshot history into the segments of its timeline strip.
+// Turns a service's snapshot history into the segments of its timeline strip.
 // Plain functions, no Angular, so the strip needs no charting library.
 
 export interface TimelinePoint {
@@ -15,7 +15,7 @@ export interface TimelineSegment {
 }
 
 // Each snapshot holds until the next one; the newest holds until `now`, so a
-// builder that has been unhealthy since the last poll shows up as such. Runs of
+// service that has been unhealthy since the last poll shows up as such. Runs of
 // the same status are merged. `history` may be in any order (the API sends it
 // newest first).
 export function timelineSegments(history: TimelinePoint[], now: Date = new Date()): TimelineSegment[] {

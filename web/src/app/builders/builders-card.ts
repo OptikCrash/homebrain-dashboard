@@ -4,7 +4,7 @@ import { Component, DestroyRef, OnInit, computed, inject, input, signal } from '
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, interval, map, of, startWith, switchMap } from 'rxjs';
 import { BuilderJob, BuildersResponse } from './builder-status';
-import { timelineSegments } from './timeline';
+import { timelineSegments } from '../shared/timeline';
 
 // Matches the API's default BUILDER_POLL_INTERVAL_MS: polling faster only
 // re-reads the same snapshots.
