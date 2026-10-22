@@ -33,9 +33,17 @@ status plus history over time (e.g. "Syncthing was down for 2h yesterday").
   always-full progress bar.
 - **Syncthing**: local REST API (`/rest/system/status`, `/rest/system/connections`,
   `/rest/db/status`) via API key. Healthy = reachable + no out-of-sync folders.
-- **LiveSync / CouchDB**: CouchDB HTTP API (`/_up` or `/_active_tasks`) plus a
-  check for stalled/failed replication. Healthy = CouchDB reachable and
-  replication current.
+- **LiveSync / CouchDB**: CouchDB binds `127.0.0.1:5984` on the Home Brain —
+  loopback-only, same as Syncthing, and also published externally via
+  `tailscale serve` (don't touch that). The dashboard reaches it the same way
+  it reaches Syncthing: `docker-compose.homebrain.yml`'s host networking.
+  CouchDB requires auth for everything, including `/_up` (401 unauthenticated).
+  v1 scope is reachability only, unauthenticated: a plain `GET /_up` (or `/`)
+  is sent with no credentials; **200 or 401 both count as "reachable"**,
+  anything else (connection error, timeout, other status) is unreachable. No
+  admin credentials go in the dashboard. Replication-current detail needs a
+  read-only CouchDB user Chris hasn't provisioned yet — deferred, see open
+  questions.
 - **Backups (restic)**: show a list of recent runs with outcome (success/fail)
   and timestamp, and a progress indicator if a backup is currently running.
   Source TBD — likely `restic snapshots --json` for history, and tailing the
@@ -115,8 +123,13 @@ Acceptance criteria:
 - History recorded to Postgres; dashboard shows recent incidents.
 
 ### M4 — LiveSync / CouchDB health
-- LiveSync card: CouchDB reachable, replication status (current vs. stalled).
-- History recorded.
+- LiveSync card: CouchDB reachable/unreachable (v1 scope — unauthenticated
+  `GET /_up`, 200 or 401 both count as reachable; no admin credentials in the
+  dashboard). Replication status is deferred to a later pass once a read-only
+  CouchDB user exists.
+- History recorded to Postgres; dashboard shows recent incidents.
+- Reuses `docker-compose.homebrain.yml`'s host networking (same loopback
+  situation as Syncthing) — no new compose work expected.
 
 ### M5 — Backups (restic)
 - Backups card: recent run list with outcome + timestamp; in-progress
@@ -152,4 +165,7 @@ Acceptance criteria:
   wrapper script)? Needed to build M4 for real.
 - Chopper's concrete health signal (process check? heartbeat file? something
   Chopper itself exposes?) — confirm before M5.
+- LiveSync/CouchDB replication-current detail (M4) needs a read-only CouchDB
+  user; Chris hasn't provisioned one yet. v1 ships reachability only; revisit
+  once that user exists.
 - Auth/exposure model if dashboard needs to be reachable off-LAN later.
