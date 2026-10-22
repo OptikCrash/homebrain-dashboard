@@ -1,0 +1,21 @@
+# Linux Home Brain override; use after docker-compose.yml (Compose 2.24.4+).
+services:
+  api:
+    network_mode: host
+    ports: !reset []
+    extra_hosts: !reset []
+    environment:
+      PORT: ${DASHBOARD_PORT:-8090}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:5434/${POSTGRES_DB}
+      SYNCTHING_URL: http://127.0.0.1:8384
+      COUCHDB_URL: ${COUCHDB_URL:-http://127.0.0.1:5984}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${PORT}/health"]
+
+  postgres:
+    # 5433 is reserved for the host's existing development database.
+    network_mode: host
+    ports: !reset []
+    command: ["postgres", "-p", "5434", "-c", "listen_addresses=127.0.0.1"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5434 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]

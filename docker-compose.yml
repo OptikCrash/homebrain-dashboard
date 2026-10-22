@@ -1,0 +1,49 @@
+services:
+  api:
+    build: ./api
+    restart: unless-stopped
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      PORT: 3000
+      # Used by Prisma; migrations are applied on container start.
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      TEAM_STATUS_DIR: /logs/status
+      SYNCTHING_URL: ${SYNCTHING_URL:-http://host.docker.internal:8384}
+      SYNCTHING_API_KEY: ${SYNCTHING_API_KEY:-}
+      SYNCTHING_FOLDERS: ${SYNCTHING_FOLDERS:-}
+      SYNCTHING_POLL_INTERVAL_MS: ${SYNCTHING_POLL_INTERVAL_MS:-30000}
+      COUCHDB_URL: ${COUCHDB_URL:-http://host.docker.internal:5984}
+      COUCHDB_POLL_INTERVAL_MS: ${COUCHDB_POLL_INTERVAL_MS:-30000}
+    volumes:
+      # Host team roster and instance files, mounted read-only.
+      - ${TEAM_STATUS_DIR:-./logs/status}:/logs/status:ro
+    ports:
+      # The dashboard's own dedicated host port (no reverse proxy).
+      - "${DASHBOARD_PORT:-8090}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    # Not published to the host: only the API talks to it, over the compose network.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
