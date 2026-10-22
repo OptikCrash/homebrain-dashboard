@@ -13,6 +13,9 @@ out-tsc/
 coverage/
 npm-debug.log*
 
+# Default local mount point for the dev builder logs dir (docker-compose.yml)
+/logs/
+
 # Editors and OS
 .vscode/
 .idea/
