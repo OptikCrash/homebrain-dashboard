@@ -81,6 +81,13 @@ Acceptance criteria:
   dedicated port (no reverse proxy).
 
 ## Open questions
+- Dev builder status (M1) reads host paths (`$LOGS/*.pid`, log tails) and
+  shells out to `gh` for PR/issue counts. Since the API runs in a container,
+  this needs a read-only bind mount of the logs dir into the container; `gh`
+  calls should NOT ship the GitHub token into the dashboard container — PR/
+  issue counts should either be dropped from M1's card or fetched via a
+  narrowly-scoped read-only token kept out of the app image. Decide exact
+  approach when scoping M1's issues.
 - How exactly is the restic backup job invoked/logged (cron, systemd timer,
   wrapper script)? Needed to build M4 for real.
 - Chopper's concrete health signal (process check? heartbeat file? something
