@@ -9,6 +9,21 @@ let logs;
 beforeEach(async () => { logs = await mkdtemp(path.join(tmpdir(), 'builders-')); });
 afterEach(async () => { await rm(logs, { recursive: true, force: true }); });
 
+test('uses the container LOGS environment variable when no directory is passed', async () => {
+  const previous = process.env.LOGS;
+  process.env.LOGS = logs;
+  try {
+    await writeFile(path.join(logs, 'codex.pid'), '123\n');
+    await writeFile(path.join(logs, 'codex.log'), 'working from mounted logs\n');
+    assert.deepEqual((await readBuilderStatus()).find((builder) => builder.name === 'codex'), {
+      name: 'codex', status: 'running', lastLogLine: 'working from mounted logs',
+    });
+  } finally {
+    if (previous === undefined) delete process.env.LOGS;
+    else process.env.LOGS = previous;
+  }
+});
+
 test('both known builders are idle without pid files, ignoring old logs', async () => {
   await writeFile(path.join(logs, 'claude.log'), 'old activity\n');
   assert.deepEqual(await readBuilderStatus(logs), [
