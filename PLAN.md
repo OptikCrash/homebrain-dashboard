@@ -151,14 +151,73 @@ Feedback from Chris after M2–M4 landed. Acceptance criteria:
     "red = CouchDB didn't answer `GET /_up`" / "red = Syncthing unreachable
     or a folder out of sync".
 
-### M5 — Backups (restic)
-- Backups card: recent run list with outcome + timestamp; in-progress
-  indicator if a backup is running.
-- Depends on confirming how the restic job runs/logs (open question).
+## Host status files (M5, M6)
+The Home Brain host now writes status files for the dashboard, refreshed by
+root cron jobs. Mounted read-only into the API container at `/srv/homebrain/status`
+(env var `HOST_STATUS_DIR`, same bind-mount pattern as `TEAM_STATUS_DIR`).
+No secrets live in this directory. **The dashboard never gets Hermes API
+keys, restic passwords, Docker socket access, or bot log files** — only
+these JSON files.
 
-### M6 — Chopper health
-- Chopper card: simple liveness + last-activity timestamp.
-- Exact signal confirmed with Chris before building.
+- `backup.json` — written by the nightly restic job (root cron, daily 03:00
+  local). May not exist until the first run.
+  ```json
+  {
+    "state": "running | ok | failed | skipped",
+    "started_at": "...", "finished_at": "... | null",
+    "last_success": "...", "error": "... | null",
+    "snapshot_id": "...", "files_total": 0, "bytes_total": 0,
+    "bytes_added": 0, "duration_s": 0,
+    "previous": { "state": "...", "finished_at": "...", "snapshot_id": "...", "bytes_added": 0 }
+  }
+  ```
+  `skipped` = USB drive missing. `snapshot_id`/`files_total`/`bytes_total`/
+  `bytes_added`/`duration_s` are present after a run. `previous` is present
+  only while `state` is `running`.
+
+- `chopper.json` and `ap5.json` — same schema, one per bot, refreshed every
+  minute (root cron).
+  ```json
+  {
+    "name": "...", "checked_at": "...",
+    "container": "running | restarting | exited | missing",
+    "container_started_at": "...",
+    "api": "up | down", "readiness": "ok | degraded | ... | null",
+    "last_message_at": "...", "last_reply_at": "..."
+  }
+  ```
+  `api` is Hermes `/health`; `readiness` is Hermes `/health/detailed`'s
+  status (`null` if `api` is down). `last_message_at`/`last_reply_at` are
+  UTC timestamps only — message contents are never exposed, here or anywhere
+  in the dashboard.
+
+### M5 — Backups (restic)
+Acceptance criteria:
+- Backups card: current state (`running`/`ok`/`failed`/`skipped`), with a
+  progress indicator while `running` (and that run's `previous` result shown
+  alongside, e.g. "last run: ok, 2.1GB added").
+- "No backup yet" shown if `backup.json` doesn't exist.
+- Flag/highlight when `last_success` is older than ~26 hours (missed night).
+- Recent-run history: each poll that observes a new completed run (a
+  `finished_at` newer than the last one stored) is snapshotted to Postgres,
+  so the card can show a short list of recent runs (state, timestamp,
+  bytes added) — `backup.json` itself only ever holds the current/previous
+  run, not a log.
+- Reads `backup.json` from `HOST_STATUS_DIR`; no restic credentials or
+  commands anywhere near the dashboard.
+
+### M6 — Bot health (Chopper + AP-5)
+Acceptance criteria:
+- One card (or one per bot, same component) showing both `chopper.json` and
+  `ap5.json`: container state, API up/down, readiness, last message/reply
+  times (UTC, times only).
+- `checked_at` older than ~3 minutes is shown as "status stale" rather than
+  trusted as current.
+- Live state only, like the Team roster/Active work cards — no Postgres
+  history for this card (matches the original M1/M2 reasoning: the status
+  files are themselves the source of truth).
+- Reads `chopper.json`/`ap5.json` from `HOST_STATUS_DIR`; never surfaces
+  message contents, log files, or requires Hermes API keys.
 
 ## Decisions
 - `package-lock.json` is committed (root, `web/`, and `api/`) and Docker
@@ -185,10 +244,6 @@ Feedback from Chris after M2–M4 landed. Acceptance criteria:
 - Builder log lines are exposed as-is (only truncated) and the API has no auth
   yet. If logs can contain anything sensitive, redact or drop them before the
   dashboard is reachable beyond the LAN.
-- How exactly is the restic backup job invoked/logged (cron, systemd timer,
-  wrapper script)? Needed to build M4 for real.
-- Chopper's concrete health signal (process check? heartbeat file? something
-  Chopper itself exposes?) — confirm before M5.
 - LiveSync/CouchDB replication-current detail (M4) needs a read-only CouchDB
   user; Chris hasn't provisioned one yet. v1 ships reachability only; revisit
   once that user exists.
