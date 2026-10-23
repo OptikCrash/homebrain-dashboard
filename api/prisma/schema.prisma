@@ -30,3 +30,16 @@ model StatusSnapshot {
   @@index([service, recordedAt])
   @@map("status_snapshots")
 }
+
+// Completed backup runs only; unique completion time makes repeated polls idempotent.
+model BackupRunSnapshot {
+  id         Int      @id @default(autoincrement())
+  state      String
+  finishedAt DateTime @unique @map("finished_at")
+  snapshotId String?  @map("snapshot_id")
+  bytesAdded BigInt?  @map("bytes_added")
+  detail     Json
+  recordedAt DateTime @default(now()) @map("recorded_at")
+
+  @@map("backup_run_snapshots")
+}

@@ -1,4 +1,5 @@
 const express = require('express');
+const { createBackupStatus } = require('./status/backups');
 const { createCouchdbStatus } = require('./status/couchdb');
 const { createSyncthingStatus } = require('./status/syncthing');
 const { createTeamStatus } = require('./status/team');
@@ -6,6 +7,7 @@ const { createTeamStatus } = require('./status/team');
 // Builds the Express app without binding a port, so tests can mount it on an
 // ephemeral port.
 function createApp({
+  backupStatus = createBackupStatus(),
   teamStatus = createTeamStatus(),
   syncthingStatus = createSyncthingStatus(),
   couchdbStatus = createCouchdbStatus(),
@@ -43,6 +45,14 @@ function createApp({
       res.json(await couchdbStatus.getStatus());
     } catch {
       res.status(503).json({ error: 'CouchDB status unavailable' });
+    }
+  });
+
+  app.get('/api/status/backups', async (req, res) => {
+    try {
+      res.json(await backupStatus.getStatus());
+    } catch {
+      res.status(503).json({ error: 'Backup status unavailable' });
     }
   });
 

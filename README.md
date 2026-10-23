@@ -215,6 +215,74 @@ run; invalid stored timestamps return false. Running readings are never complete
 callers can check their `previous` explicitly to recover an intervening run.
 The reader performs no polling, database writes, or Express routing.
 
+### Backup polling and API
+
+The API reads `backup.json` immediately on startup, then waits
+`BACKUP_POLL_INTERVAL_MS` (default `30000`, positive integer up to `2147483647`)
+after each completed poll. Polls never overlap and shutdown drains an active poll.
+A completed `ok`, `failed`, or `skipped` run is stored only when its `finished_at`
+is newer than the newest stored run. While running, `previous` is checked instead.
+The `backup_run_snapshots` table retains normalized run details; a unique indexed
+completion timestamp prevents duplicate rows across polls and restarts and supports
+bounded newest-first queries. History is retained indefinitely.
+
+`GET /api/status/backups` returns the following JSON shape for the backup card:
+
+```json
+{
+  "current": {
+    "state": "running",
+    "started_at": "2026-10-23T03:00:00Z",
+    "finished_at": null,
+    "last_success": "2026-10-22T03:10:00Z",
+    "error": null,
+    "snapshot_id": null,
+    "files_total": null,
+    "bytes_total": null,
+    "bytes_added": null,
+    "duration_s": null,
+    "previous": {
+      "state": "ok",
+      "started_at": null,
+      "finished_at": "2026-10-22T03:10:00Z",
+      "last_success": null,
+      "error": null,
+      "snapshot_id": "abc123",
+      "files_total": null,
+      "bytes_total": null,
+      "bytes_added": 123456,
+      "duration_s": null
+    },
+    "stale": false
+  },
+  "history": [
+    {
+      "state": "ok",
+      "previous": null,
+      "started_at": null,
+      "finished_at": "2026-10-22T03:10:00.000Z",
+      "last_success": null,
+      "error": null,
+      "snapshot_id": "abc123",
+      "files_total": null,
+      "bytes_total": null,
+      "bytes_added": 123456,
+      "duration_s": null
+    }
+  ]
+}
+```
+
+`current` is the latest polled reader result plus `stale`, recalculated per request
+using the reader's 26-hour rule. It is `null` before the first poll or when the
+file does not exist. History contains up to ten completed runs, newest first,
+and survives restarts or a missing file. History entries always
+contain `previous: null`. Missing
+metrics are `null`. Before any runs exist the response is
+`{ "current": null, "history": [] }`. Requests do not trigger file reads.
+Reader or storage failures return HTTP 503 with
+`{ "error": "Backup status unavailable" }`; polling retries on the next interval.
+
 ### Syncthing health reader
 
 `api/src/checks/syncthing.js` exports `readSyncthingStatus({ url, apiKey, folders, fetch })`.
