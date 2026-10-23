@@ -2,6 +2,7 @@ import { DatePipe } from '@angular/common';
 import { Component, DestroyRef, OnInit, computed, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, interval, map, of, startWith, switchMap } from 'rxjs';
+import { formatBytes } from '../shared/format-bytes';
 import { HistoryStrip } from '../shared/history-strip';
 import { timelineSegments } from '../shared/timeline';
 import { SyncthingFolder, SyncthingResponse, SyncthingStatus } from './syncthing-status';
@@ -214,15 +215,4 @@ function folderProblems(folder: SyncthingFolder): string[] {
   }
   if (folder.state === 'error' && folder.errors === 0) problems.push('Folder is in an error state');
   return problems;
-}
-
-function formatBytes(bytes: number): string {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit++;
-  }
-  return `${unit === 0 ? value : value.toFixed(1)} ${units[unit]}`;
 }

@@ -379,6 +379,12 @@ The **LiveSync / CouchDB** card fetches `GET /api/status/couchdb` every 30 secon
 whether CouchDB is reachable (unknown if the check itself failed), any check error as red text, and
 the same history strip. v1 is reachability only; replication detail waits on a read-only CouchDB user.
 
+The **Backups** card fetches `GET /api/status/backups` every 30 seconds. It shows the current
+run's state (`running`/`ok`/`failed`/`skipped`); while running, an indeterminate progress bar (no
+percentage is reported) beside the previous run's outcome. A `last_success` over 26 hours old is
+flagged "overdue" in amber. "No backup yet" shows when there's no `backup.json` and no history;
+below that, up to ten recent completed runs (state, finish time in UTC, bytes added).
+
 The **Bot health** card fetches `GET /api/status/bots` every 30 seconds. For Chopper and AP-5 it
 shows container state, Hermes API up/down, readiness (`n/a` while the API is down), and the last
 message/reply times in UTC — never message contents. A bot whose `checked_at` is more than three
