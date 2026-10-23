@@ -179,6 +179,14 @@ Compose mounts `HOST_STATUS_DIR` (default `/srv/homebrain/status`) read-only at
 defaulting to `/srv/homebrain/status`. No secrets live in this directory, so a
 plain read-only bind mount is all it needs.
 
+`api/src/checks/bots.js` reads `chopper.json` and `ap5.json`. `readAllBotHealth()`
+returns one entry per bot: `{ bot, present: false }` when the file is missing or
+can't be parsed, otherwise `{ bot, present: true, name, checked_at, container,
+container_started_at, api, readiness, last_message_at, last_reply_at, stale }`.
+Only those schema fields are copied; unexpected values become `null`, and
+`readiness` is always `null` unless `api` is `up`. `stale` is true when
+`checked_at` is missing or more than three minutes old (`isStale()`).
+
 Missing directories return empty arrays; a missing roster returns an empty array.
 Malformed or unreadable instance files are skipped. Unexpected directory or roster
 read failures (including entries that are not objects with a non-empty string name)
