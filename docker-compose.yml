@@ -8,6 +8,7 @@ services:
       # Used by Prisma; migrations are applied on container start.
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       TEAM_STATUS_DIR: /logs/status
+      HOST_STATUS_DIR: /srv/homebrain/status
       SYNCTHING_URL: ${SYNCTHING_URL:-http://host.docker.internal:8384}
       SYNCTHING_API_KEY: ${SYNCTHING_API_KEY:-}
       SYNCTHING_FOLDERS: ${SYNCTHING_FOLDERS:-}
@@ -17,6 +18,8 @@ services:
     volumes:
       # Host team roster and instance files, mounted read-only.
       - ${TEAM_STATUS_DIR:-./logs/status}:/logs/status:ro
+      # Host-written backup and bot status JSON (M5, M6), mounted read-only.
+      - ${HOST_STATUS_DIR:-/srv/homebrain/status}:/srv/homebrain/status:ro
     ports:
       # The dashboard's own dedicated host port (no reverse proxy).
       - "${DASHBOARD_PORT:-8090}:3000"
