@@ -187,6 +187,12 @@ Only those schema fields are copied; unexpected values become `null`, and
 `readiness` is always `null` unless `api` is `up`. `stale` is true when
 `checked_at` is missing or more than three minutes old (`isStale()`).
 
+`GET /api/status/bots` reads both files on every request and returns
+`{ "bots": [...] }` in Chopper, AP-5 order using the entries described above.
+Missing or malformed files leave that bot unavailable (`present: false`) while
+preserving the other bot's status. Unexpected read failures return HTTP 503 with
+`{ "error": "Bot status unavailable" }`. This endpoint stores no PostgreSQL history.
+
 Missing directories return empty arrays; a missing roster returns an empty array.
 Malformed or unreadable instance files are skipped. Unexpected directory or roster
 read failures (including entries that are not objects with a non-empty string name)
