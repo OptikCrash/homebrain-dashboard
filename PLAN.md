@@ -219,6 +219,12 @@ Acceptance criteria:
 - Reads `chopper.json`/`ap5.json` from `HOST_STATUS_DIR`; never surfaces
   message contents, log files, or requires Hermes API keys.
 
+### M7 — AGENTS.md (builder rulebook)
+A one-page `AGENTS.md` at repo root: project map, commands, conventions,
+Home Brain gotchas, security rules. Plus a one-line `CLAUDE.md` pointing at
+it, so both builder engines read the same rules. See issue for the exact
+required content.
+
 ## Decisions
 - `package-lock.json` is committed (root, `web/`, and `api/`) and Docker
   builds use `npm ci`, not `npm install` — reproducible builds. A PR that
