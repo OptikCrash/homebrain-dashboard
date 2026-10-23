@@ -92,6 +92,7 @@ key, and use these host-specific values:
 
 ```sh
 TEAM_STATUS_DIR=/srv/homebrain/hermes-dev/work/logs/status
+HOST_STATUS_DIR=/srv/homebrain/status
 SYNCTHING_URL=http://127.0.0.1:8384
 DASHBOARD_PORT=8090
 ```
@@ -121,7 +122,8 @@ Port 5434 must be free before starting this deployment.
 With host networking, there is no Docker port mapping: `DASHBOARD_PORT` sets the
 app's `PORT` directly (default **8090**), and the health check uses that same port.
 Choose the port the app should actually listen on; Docker cannot remap it.
-The team status directory remains mounted read-only at `/logs/status`.
+The team status directory remains mounted read-only at `/logs/status`, and the
+host status directory at `/srv/homebrain/status`.
 
 To check the merged configuration without starting containers:
 
@@ -167,6 +169,15 @@ branch, phase, timestamps, and result); process IDs and host log paths are omitt
 Only a non-terminal latest instance marks a roster entry active. `recent`
 contains the five newest terminal instances by `updated_at`, with
 `name`, `title`, `issue`, `pr`, `phase`, `result`, and `updated_at`.
+
+### Host status files
+
+The Home Brain host's root cron jobs write `backup.json`, `chopper.json`, and
+`ap5.json` (schemas in PLAN.md) for the backup and bot health cards (M5, M6).
+Compose mounts `HOST_STATUS_DIR` (default `/srv/homebrain/status`) read-only at
+`/srv/homebrain/status`. Outside Docker, readers use `HOST_STATUS_DIR` directly,
+defaulting to `/srv/homebrain/status`. No secrets live in this directory, so a
+plain read-only bind mount is all it needs.
 
 Missing directories return empty arrays; a missing roster returns an empty array.
 Malformed or unreadable instance files are skipped. Unexpected directory or roster

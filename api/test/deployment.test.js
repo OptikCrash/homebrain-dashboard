@@ -19,6 +19,7 @@ test('Compose reaches host services while preserving team status and database ne
       HOME: process.env.HOME,
       ...(process.env.DOCKER_CONFIG ? { DOCKER_CONFIG: process.env.DOCKER_CONFIG } : {}),
       TEAM_STATUS_DIR: '/tmp/homebrain-deployment-test-status',
+      HOST_STATUS_DIR: '/tmp/homebrain-deployment-test-host-status',
     },
     encoding: 'utf8',
   }));
@@ -33,6 +34,9 @@ test('Compose reaches host services while preserving team status and database ne
   assert.equal(api.environment.BUILDER_POLL_INTERVAL_MS, undefined);
   assert.ok(api.volumes.some((volume) => volume.source === '/tmp/homebrain-deployment-test-status'
     && volume.target === '/logs/status' && volume.read_only === true));
+  assert.equal(api.environment.HOST_STATUS_DIR, '/srv/homebrain/status');
+  assert.ok(api.volumes.some((volume) => volume.source === '/tmp/homebrain-deployment-test-host-status'
+    && volume.target === '/srv/homebrain/status' && volume.read_only === true));
   assert.equal(new URL(api.environment.DATABASE_URL).hostname, 'postgres');
   assert.equal(api.depends_on.postgres.condition, 'service_healthy');
   assert.deepEqual(api.networks, postgres.networks);
@@ -90,6 +94,10 @@ test('Home Brain override reaches loopback services with a directly configured A
     assert.equal(api.depends_on.postgres.condition, 'service_healthy');
     assert.ok(api.volumes.some((volume) => volume.source === '/srv/homebrain/hermes-dev/work/logs/status'
       && volume.target === '/logs/status' && volume.read_only === true));
+    // HOST_STATUS_DIR comes from .env.example here: the Home Brain path.
+    assert.equal(api.environment.HOST_STATUS_DIR, '/srv/homebrain/status');
+    assert.ok(api.volumes.some((volume) => volume.source === '/srv/homebrain/status'
+      && volume.target === '/srv/homebrain/status' && volume.read_only === true));
   }
 });
 
