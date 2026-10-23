@@ -311,6 +311,11 @@ The **LiveSync / CouchDB** card fetches `GET /api/status/couchdb` every 30 secon
 whether CouchDB is reachable (unknown if the check itself failed), any check error as red text, and
 the same history strip. v1 is reachability only; replication detail waits on a read-only CouchDB user.
 
+The **Bot health** card fetches `GET /api/status/bots` every 30 seconds. For Chopper and AP-5 it
+shows container state, Hermes API up/down, readiness (`n/a` while the API is down), and the last
+message/reply times in UTC — never message contents. A bot whose `checked_at` is more than three
+minutes old is flagged "status stale"; a bot with no status file says so. Live state only, no history strip.
+
 The dev server proxies `/api` to the API at `http://localhost:8090` (`web/proxy.conf.json`), so
 start the API with `docker compose up` first. If you changed `DASHBOARD_PORT`, change the proxy
 target to match.
