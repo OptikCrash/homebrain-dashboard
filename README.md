@@ -194,6 +194,27 @@ return HTTP 503 with `{ "error": "Team status unavailable" }`.
 The old `/api/status/builders` route is removed. Existing builder snapshots
 remain in PostgreSQL but are no longer read or written by the API.
 
+### Backup status reader
+
+`api/src/checks/backup.js` exports `readBackupStatus({ dir })`, defaulting to
+`HOST_STATUS_DIR` or `/srv/homebrain/status`. It reads only `backup.json`, returning
+`null` for a missing file/directory ("No backup yet"). Invalid JSON/fields throw
+`Invalid backup status`; other read failures throw `Backup status unavailable`.
+Readings retain the contract's snake_case fields, normalize absent fields to
+`null`, and discard unknown fields. `previous` is a normalized completed run
+only while running, otherwise `null`. Timestamps must include a timezone;
+counts/byte sizes are nonnegative safe integers and duration may be fractional.
+
+`isBackupStale(lastSuccess, now)` flags success timestamps strictly older than
+26 hours (`now` defaults to epoch milliseconds; a Date also works). Missing or
+invalid success timestamps return false, so consumers should handle "no successful
+backup yet" separately. `isNewCompletedRun(reading, lastFinishedAt)` accepts
+`ok`, `failed`, or `skipped` only, with a valid `finished_at` strictly newer than
+the stored ISO timestamp or Date. A null/omitted stored timestamp means no saved
+run; invalid stored timestamps return false. Running readings are never completed;
+callers can check their `previous` explicitly to recover an intervening run.
+The reader performs no polling, database writes, or Express routing.
+
 ### Syncthing health reader
 
 `api/src/checks/syncthing.js` exports `readSyncthingStatus({ url, apiKey, folders, fetch })`.
