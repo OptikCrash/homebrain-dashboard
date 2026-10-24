@@ -219,11 +219,17 @@ Acceptance criteria:
 - Reads `chopper.json`/`ap5.json` from `HOST_STATUS_DIR`; never surfaces
   message contents, log files, or requires Hermes API keys.
 
-### M7 — AGENTS.md (builder rulebook)
+### M7 — AGENTS.md (builder rulebook) ✅ done
 A one-page `AGENTS.md` at repo root: project map, commands, conventions,
 Home Brain gotchas, security rules. Plus a one-line `CLAUDE.md` pointing at
-it, so both builder engines read the same rules. See issue for the exact
-required content.
+it, so both builder engines read the same rules.
+
+### M8 — CI (GitHub Actions)
+A single required `ci` check on every PR and on push to `develop`:
+checkout, install (`npm ci` at root/`api`/`web`), root `npm test`, api tests
+against a real `postgres:16` service container, web tests (headless +
+`allow-scripts.test.mjs`), web build. `AGENTS.md` gets a line: a PR isn't
+done until `ci` is green.
 
 ## Decisions
 - `package-lock.json` is committed (root, `web/`, and `api/`) and Docker
