@@ -8,6 +8,6 @@
     "frontend": "npm --prefix web start",
     "all": "sh scripts/dev-all.sh",
     "all:homebrain": "sh scripts/dev-all.sh -f docker-compose.yml -f docker-compose.homebrain.yml",
-    "test": "node --test scripts/dev-all.test.mjs"
+    "test": "node --test scripts/*.test.mjs"
   }
 }

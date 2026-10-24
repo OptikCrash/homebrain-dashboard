@@ -1,0 +1,70 @@
+# Single required check: the job id `ci` is the check name, so the job has no `name:`.
+# Never switch to pull_request_target and never use secrets here (public repo, fork PRs).
+name: ci
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        # Throwaway credentials for an ephemeral CI-only database; not secrets.
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Current LTS inside the api/web `engines` range; `lts/*` would drift past it.
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
+            web/package-lock.json
+
+      - run: npm ci
+      - run: npm ci
+        working-directory: api
+      - run: npm ci
+        working-directory: web
+
+      - name: Root tests
+        run: npm test
+
+      - name: Api tests (Postgres)
+        working-directory: api
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: |
+          npm run db:deploy
+          npm test
+
+      - name: Web tests
+        working-directory: web
+        run: |
+          npm test
+          node --test allow-scripts.test.mjs
+
+      - name: Web build
+        working-directory: web
+        run: npm run build

@@ -21,11 +21,17 @@ Read this before working. Then read `PLAN.md` and `README.md`.
   - `npm run all:homebrain` — on the Home Brain host only: same, with `docker-compose.homebrain.yml`
     (host networking for WSL mirrored networking). `npm run backend[:homebrain]` / `npm run frontend` run one half.
 - Test:
-  - Root: `npm test` (dev-all script).
+  - Root: `npm test` (dev-all script and the `ci.yml` guard).
   - `api/`: `npm test`. DB tests skip unless `DATABASE_URL` is set; migrate first with `npm run db:deploy`.
   - `web/`: `npm test` (and `node --test allow-scripts.test.mjs`). `npm run build` for a production build.
 - Migrate (`api/`): `npm run db:migrate` (`prisma migrate dev`, creates migrations),
   `npm run db:deploy` (`prisma migrate deploy`, applies them), `npm run db:generate`.
+
+## CI
+
+- A PR isn't done until the `ci` check (`.github/workflows/ci.yml`) is green. It runs the installs,
+  tests above (api against a `postgres:16` service) and the web build on Node 24. Keep the job id
+  `ci` with no `name:`, `contents: read`, no secrets, never `pull_request_target`.
 
 ## Conventions
 
