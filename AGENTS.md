@@ -13,6 +13,11 @@ Read this before working. Then read `PLAN.md` and `README.md`.
   [Dev team status file format](PLAN.md#dev-team-status-file-format) and
   [Host status files (M5, M6)](PLAN.md#host-status-files-m5-m6). Don't duplicate them here.
 
+## Skills
+
+- [add-status-endpoint](.claude/skills/add-status-endpoint/SKILL.md) — read when
+  adding an API endpoint backed by a host status file or host service.
+
 ## Commands
 
 - Install: `npm ci` in `api/` and `web/` (not `npm install`). `api` postinstall runs `prisma generate`.
