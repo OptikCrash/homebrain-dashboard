@@ -231,6 +231,13 @@ against a real `postgres:16` service container, web tests (headless +
 `allow-scripts.test.mjs`), web build. `AGENTS.md` gets a line: a PR isn't
 done until `ci` is green.
 
+### M9 — Team skills (`.claude/skills/`)
+Four `SKILL.md` files, each distilled from patterns already merged (not
+invented process): `add-dashboard-card` (Sabine), `add-status-endpoint`
+(Zeb), `prisma-migration` (Zeb), `review-checklist` (Hera, built by Ezra).
+`AGENTS.md` gets a "Skills" section listing them so Codex builders read them
+too.
+
 ## Decisions
 - `package-lock.json` is committed (root, `web/`, and `api/`) and Docker
   builds use `npm ci`, not `npm install` — reproducible builds. A PR that
