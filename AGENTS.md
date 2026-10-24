@@ -42,6 +42,11 @@ Read this before working. Then read `PLAN.md` and `README.md`.
 - `package-lock.json` stays committed (root, `api/`, `web/`). Docker builds use `npm ci`. A lockfile
   change needs a matching `package.json` change, or reviewers flag it.
 
+## Skills
+
+- [review-checklist](.claude/skills/review-checklist/SKILL.md) — use when reviewing a PR;
+  checks this repo's standards in severity order, with links to the source rules.
+
 ## Gotchas learned on the Home Brain
 
 - Syncthing (8384) and CouchDB (5984) listen on `127.0.0.1` only on the host; containers that need
