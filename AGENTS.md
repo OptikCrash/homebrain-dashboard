@@ -17,6 +17,8 @@ Read this before working. Then read `PLAN.md` and `README.md`.
 
 - [add-status-endpoint](.claude/skills/add-status-endpoint/SKILL.md) — read when
   adding an API endpoint backed by a host status file or host service.
+- [prisma-migration](.claude/skills/prisma-migration/SKILL.md) — read when
+  changing Postgres tables, columns, indexes, or constraints.
 
 ## Commands
 
