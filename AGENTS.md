@@ -15,8 +15,8 @@ Read this before working. Then read `PLAN.md` and `README.md`.
 
 ## Skills
 
-- [add-status-endpoint](.claude/skills/add-status-endpoint/SKILL.md) — read when
-  adding an API endpoint backed by a host status file or host service.
+- [add-dashboard-card](.claude/skills/add-dashboard-card/SKILL.md) — read when adding a
+  status card to the home page: service, card states, history strip, spec, home registration.
 
 ## Commands
 
@@ -46,13 +46,6 @@ Read this before working. Then read `PLAN.md` and `README.md`.
   there, not an ad hoc config file or flag.
 - `package-lock.json` stays committed (root, `api/`, `web/`). Docker builds use `npm ci`. A lockfile
   change needs a matching `package.json` change, or reviewers flag it.
-
-## Skills
-
-- [review-checklist](.claude/skills/review-checklist/SKILL.md) — use when reviewing a PR;
-  checks this repo's standards in severity order, with links to the source rules.
-- [add-dashboard-card](.claude/skills/add-dashboard-card/SKILL.md) — existing Angular
-  service/card, polling, state, history-strip, test and home-registration patterns.
 
 ## Gotchas learned on the Home Brain
 
