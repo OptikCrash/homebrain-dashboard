@@ -2,7 +2,7 @@ services:
   api:
     build: ./api
     tmpfs: [/tmp]
-    restart: "no"
+    restart: unless-stopped
     post_start:
       - command: ["sh", "/app/wait-ready.sh"]
     network_mode: host
@@ -38,13 +38,15 @@ services:
     network_mode: host
     command: ["postgres", "-p", "5434", "-c", "listen_addresses=127.0.0.1"]
     tmpfs: [/tmp]
-    restart: "no"
+    restart: unless-stopped
     post_start:
       - command: ["sh", "/usr/local/bin/wait-ready.sh"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      # Fresh clusters only: put password auth before initdb loopback defaults.
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
     # Preserve the existing volume and Compose project identity.
     volumes:
       - pgdata:/var/lib/postgresql/data

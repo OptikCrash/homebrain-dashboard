@@ -5,19 +5,20 @@ import time
 from pathlib import Path
 
 from port_check import check_port
+from auth_check import check_auth
 
 # Probe only; the real server bind remains authoritative.
-check_port(5434)
 try:
     os.unlink("/tmp/dashboard-ready")
 except FileNotFoundError:
     pass
+check_port(5434)
 child = subprocess.Popen(["docker-entrypoint.sh", *sys.argv[1:]])
 import signal
 for sig in (signal.SIGTERM, signal.SIGINT):
     signal.signal(sig, lambda signum, frame: child.send_signal(signum))
-# The image's temporary initialization server uses port 5432, so cannot satisfy
-# this Unix-socket readiness check. A foreign TCP listener cannot satisfy it either.
+# During initialization the temporary server has a different PID. Require the
+# final child process and its private Unix socket before checking TCP auth.
 while child.poll() is None:
     pidfile = Path(os.environ.get("PGDATA", "/var/lib/postgresql/data")) / "postmaster.pid"
     try:
@@ -25,6 +26,13 @@ while child.poll() is None:
     except (OSError, ValueError, IndexError):
         own_server = False
     if own_server and subprocess.run(["pg_isready", "-h", "/var/run/postgresql", "-p", "5434"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        try:
+            check_auth()
+        except RuntimeError as error:
+            print(str(error), file=sys.stderr)
+            child.terminate()
+            child.wait()
+            sys.exit(1)
         open("/tmp/dashboard-ready", "w").close()
         break
     time.sleep(0.1)

@@ -26,7 +26,10 @@ const stopBackupPolling = startBackupPolling({ poll: backupStatus.poll, interval
 const port = require('./listen').port();
 
 const server = createApp({ backupStatus, teamStatus, syncthingStatus, couchdbStatus }).listen(port, '127.0.0.1', () => {
-  require('node:fs').writeFileSync('/tmp/dashboard-ready', '');
+  // Only the container startup entrypoint participates in Compose readiness.
+  if (require.main?.filename === require.resolve('./start')) {
+    require('node:fs').writeFileSync('/tmp/dashboard-ready', '');
+  }
   console.log(`homebrain-dashboard API listening on 127.0.0.1:${port}`);
 });
 

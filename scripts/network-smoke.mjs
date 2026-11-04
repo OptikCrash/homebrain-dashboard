@@ -50,7 +50,7 @@ try {
       assert.equal(contacts, 0, 'startup must not contact the unrelated listener');
       const logs = await compose('logs', '--no-color');
       assert.match(logs.stdout + logs.stderr, new RegExp(`${port}.*(unavailable|free|listener)`));
-      if (port === 5434) assert.doesNotMatch(logs.stdout, /prisma migrate|Applying migration/);
+      if (port === 5434) assert.doesNotMatch(logs.stdout + logs.stderr, /prisma migrate|Applying migration/);
     } finally {
       await close(standin);
       await compose('down', '--volumes');
@@ -68,11 +68,23 @@ try {
   assert.equal((await sql('SHOW port')).stdout.trim(), '5434');
   await sql("INSERT INTO status_snapshots (service, status) VALUES ('preserved-smoke', 'healthy')");
   // TCP must reject the wrong password, including after reusing initialized data.
-  await assert.rejects(compose('exec', '-T', '-e', 'PGPASSWORD=wrong-fixture', 'postgres', 'psql', '-h', '127.0.0.1', '-p', '5434', '-U', 'smoke', '-d', 'smoke', '-c', 'SELECT 1'));
+  const checkPassword = async () => {
+    const rules = await sql('SELECT rule_number, type, address, auth_method, error FROM pg_hba_file_rules ORDER BY rule_number');
+    console.log('Effective ordered HBA rules:', rules.stdout);
+    const correct = await compose('exec', '-T', '-e', 'PGPASSWORD=smoke', 'postgres', 'psql', '-X', '-w', '-h', '127.0.0.1', '-p', '5434', '-U', 'smoke', '-d', 'smoke', '-Atc', 'SELECT 1');
+    assert.equal(correct.stdout.trim(), '1');
+    await assert.rejects(compose('exec', '-T', '-e', 'PGPASSWORD=wrong-fixture', 'postgres', 'psql', '-X', '-w', '-h', '127.0.0.1', '-p', '5434', '-U', 'smoke', '-d', 'smoke', '-c', 'SELECT 1'), error => {
+      assert.match(error.stderr, /password authentication failed for user "smoke"/);
+      return true;
+    });
+  };
+  await checkPassword();
   await compose('restart', 'postgres');
   await compose('up', '-d', '--wait', '--wait-timeout', '120', 'postgres');
   await compose('restart', 'api');
   await compose('up', '-d', '--wait', '--wait-timeout', '120');
+  await compose('up', '-d');
+  await checkPassword();
   assert.equal((await fetch('http://127.0.0.1:8090/health')).status, 200);
   assert.equal((await sql("SELECT count(*) FROM status_snapshots WHERE service='preserved-smoke'")).stdout.trim(), '1');
   let healthy = 0;

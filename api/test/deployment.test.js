@@ -21,7 +21,7 @@ test('default and compatibility Compose configurations use loopback host network
       assert.ok(!service.networks);
       assert.ok(!service.extra_hosts?.length);
       assert.ok(service.post_start.length);
-      assert.equal(service.restart, 'no');
+      assert.equal(service.restart, 'unless-stopped');
     }
     assert.equal(api.environment.PORT, '8090');
     assert.equal(api.environment.SYNCTHING_URL, 'http://127.0.0.1:8384');
@@ -33,6 +33,7 @@ test('default and compatibility Compose configurations use loopback host network
     assert.deepEqual(postgres.command, ['postgres', '-p', '5434', '-c', 'listen_addresses=127.0.0.1']);
     assert.ok(postgres.volumes.some(v => v.source === config.volumes.pgdata.name && v.target === '/var/lib/postgresql/data') || postgres.volumes.some(v => v.source === 'pgdata' && v.target === '/var/lib/postgresql/data'));
     assert.equal(postgres.environment.POSTGRES_HOST_AUTH_METHOD, undefined);
+    assert.equal(postgres.environment.POSTGRES_INITDB_ARGS, '--auth-host=scram-sha-256');
     assert.match(postgres.healthcheck.test[1], /-h 127\.0\.0\.1 -p 5434/);
     assert.ok(api.volumes.filter(v => v.type === 'bind').every(v => v.read_only));
     assert.equal(api.healthcheck.test.at(-1), 'http://127.0.0.1:8090/health');
@@ -45,6 +46,8 @@ test('shipped sources keep loopback listeners, startup guards and volume identit
   assert.doesNotMatch(compose, /ports:|extra_hosts:|@postgres:|0\.0\.0\.0|5433|5432|trust/);
   assert.match(compose, /pgdata:\/var\/lib\/postgresql\/data/);
   assert.match(compose, /service_healthy/);
+  assert.equal((compose.match(/restart: unless-stopped/g) || []).length, 2);
+  assert.match(compose, /POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256/);
   assert.equal((compose.match(/network_mode: host/g) || []).length, 2);
   const server = readFileSync(path.join(root, 'api/src/server.js'), 'utf8');
   assert.match(server, /\.listen\(port, '127\.0\.0\.1'/);

@@ -61,6 +61,11 @@ Read this before working. Then read `PLAN.md` and `README.md`.
 - Compose requires 2.30+ for synchronous `post_start` startup safeguards. Never bypass those
   hooks, rename `pgdata`/the existing project, or use `down -v` on deployment data. Port
   probes are advisory; real binds and readiness determine startup success.
+- Fresh Postgres clusters need `POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256`; otherwise
+  initdb loopback `trust` rules precede the image's appended password rule. Startup checks
+  correct and incorrect TCP passwords before readiness; existing auth failures need operator
+  review, never an automatic pg_hba rewrite or password reset. Port 5434 is linked in the
+  command, healthcheck, startup/auth checks and API URL.
 - Builders' dev database: `127.0.0.1:5433` (user `dev`, password `dev`, db `dev`). Port 5434 is the
   dashboard's own Postgres — don't confuse the two.
 - `.env.example` is the only env file ever committed — never commit a real `.env` (or `api/.env`).

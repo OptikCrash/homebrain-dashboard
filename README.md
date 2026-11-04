@@ -80,8 +80,9 @@ Plain `docker compose up -d` checks startup automatically. A port collision prod
 nonzero exit with an error naming the listener to free; inspect `docker compose logs`
 for details. No unrelated listener is stopped or contacted as a database. Probes are
 not race-proof: the actual server bind remains authoritative, and startup hooks fail
-if the service cannot become ready. Automatic restart is disabled so a bind failure
-cannot hide in a restart loop. Repeated `up -d` leaves running containers alone;
+if the service cannot become ready. Both containers retain `restart: unless-stopped`
+for crash/reboot recovery. Synchronous startup hooks still return nonzero if readiness
+fails, even during a restart loop. Repeated `up -d` leaves running containers alone;
 `docker compose restart` checks ports again after stopping their old listeners.
 
 Keep the existing Compose project name and `pgdata:/var/lib/postgresql/data` volume.
@@ -89,7 +90,15 @@ Do not rename the volume, change project names to migrate, reset data, or use `d
 Existing initialized volumes keep their roles, passwords, migrations and status history.
 `POSTGRES_*` initialization variables do not reset existing passwords. Supply the actual
 existing credentials; authentication remains password-based without `trust` shortcuts.
+New clusters use `--auth-host=scram-sha-256` so initdb's loopback rules require a
+password. Before readiness, startup verifies that TCP accepts the configured password
+and rejects an incorrect password specifically with a password-authentication failure.
+If an existing cluster fails this check, startup fails and the API cannot migrate:
+an operator must review the existing credentials and ordered `pg_hba.conf` rules.
+Startup never rewrites existing authentication rules or resets passwords.
 The API waits for this container's Postgres readiness before applying migrations.
+Port 5434 is fixed together in the Postgres command, startup/auth checks, healthcheck
+and API connection URL; changing just one is unsupported.
 
 The old `docker-compose.homebrain.yml` is now an empty compatibility override. Existing
 two-file commands and `:homebrain` npm scripts still work, but no override is needed.
@@ -364,7 +373,7 @@ shows container state, Hermes API up/down, readiness (`n/a` while the API is dow
 message/reply times in UTC — never message contents. A bot whose `checked_at` is more than three
 minutes old is flagged "status stale"; a bot with no status file says so. Live state only, no history strip.
 
-The dev server proxies `/api` to the API at `http://localhost:8090` (`web/proxy.conf.json`), so
+The dev server proxies `/api` to the API at `http://127.0.0.1:8090` (`web/proxy.conf.json`), so
 start the API with `docker compose up` first. For a direct API run with a custom `PORT`, change the proxy target to match.
 
 `npm run build` writes a production build to `web/dist/`.
