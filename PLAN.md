@@ -279,18 +279,38 @@ Acceptance criteria:
     project, so the existing data directory (cluster identity, migration
     history and recorded status history) is reused as-is, not re-initialized,
     renamed or replaced.
+  - **Existing volume authentication**: an already-initialized `pgdata`
+    keeps its existing roles and passwords. No `pg_hba.conf` shortcuts (no
+    added `trust` lines, no loosened auth methods) and no silent credential
+    resets (no init scripts or `ALTER ROLE` run to make `.env` match). The
+    `POSTGRES_*` initialization env vars only apply when the data directory is
+    first created; they do not retroactively change passwords in an existing
+    volume, so `.env` must keep the credentials that volume was created with.
   - Migrations applied on API start (`prisma migrate deploy`), the read-only
     status mounts, and the API waiting on Postgres readiness
     (`service_healthy`).
 - **Startup safeguards (plain `docker compose up -d`)**:
   - **Occupied port fails automatically**: if 5434, 8090 or 8080 is already
     held by something other than this stack, the plain Compose startup path
-    fails visibly (non-zero exit / unhealthy service with a clear log line).
-    It never silently falls back to another port, another address or a
-    wildcard bind, and no manual pre-check or extra script is required.
-  - **Idempotent repeated up**: running `docker compose up -d` again while the
-    dashboard is already up succeeds and leaves the running stack (and its
-    data) as is — its own listeners never count as "occupied".
+    exits non-zero with a clear, actionable message naming the port and what
+    to do (free it or stop the other listener). A service that merely ends up
+    unhealthy while `up` reports success does not meet this. It never
+    silently falls back to another port, another address or a wildcard bind,
+    and no manual pre-check or extra script is required.
+  - **Never touch the other listener**: the stack must not stop, kill or
+    reconfigure an unrelated service holding a port, must not connect the API
+    to a database it did not start (a stranger's Postgres on 5434), and must
+    never run migrations against one.
+  - **Startup race / bind failure**: a preflight port probe, if used, is not
+    race-proof (another process can take the port between check and bind), so
+    it cannot be the only safeguard. The real bind is authoritative: a bind
+    failure at service start (e.g. `EADDRINUSE`, Postgres "could not bind")
+    must be detected and surface as the same clear non-zero failure, not a
+    restart loop that looks healthy or an API talking to the wrong listener.
+  - **Idempotent repeated up**: running `docker compose up -d` again, or a
+    container restart, while the dashboard is already up succeeds and leaves
+    the running stack (and its data) as is — its own listeners never count
+    as "occupied".
 - **Web image**: multi-stage Dockerfile for `web/` — build stage runs `npm ci`
   against the committed `web/package-lock.json` and the production Angular
   build; the serving stage is a small static server with no dev server and no
@@ -326,7 +346,12 @@ Acceptance criteria:
   Docker-enabled CI smoke path that builds both images, starts the stack,
   confirms migrations ran, and checks: API `/health`; served production HTML
   and assets on the web endpoint; same-origin `/api` proxying; an API non-200
-  response passed through unchanged. Syncthing/CouchDB use isolated,
+  response passed through unchanged. Startup safeguard tests, run by the
+  builder and in CI: a free-port case (stack starts, repeated `up -d`
+  succeeds) and an occupied-port case for each of 5434, 8090 and 8080 (a
+  stand-in listener holds the port; `up` exits non-zero with the clear
+  message, the stand-in is left running and untouched, and no migration runs
+  against it). Syncthing/CouchDB use isolated,
   credential-free loopback fixtures in CI. Live Syncthing access is not
   claimed as verified without real, authorized evidence from the host.
 - **Unchanged guardrails**: the required `ci` check (job id `ci`, no `name:`,
