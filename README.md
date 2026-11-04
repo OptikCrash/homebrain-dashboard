@@ -90,12 +90,20 @@ Do not rename the volume, change project names to migrate, reset data, or use `d
 Existing initialized volumes keep their roles, passwords, migrations and status history.
 `POSTGRES_*` initialization variables do not reset existing passwords. Supply the actual
 existing credentials; authentication remains password-based without `trust` shortcuts.
-New clusters use `--auth-host=scram-sha-256` so initdb's loopback rules require a
-password. Before readiness, startup verifies that TCP accepts the configured password
+Both fresh and initialized volumes use the image's `/etc/postgresql/dashboard-pg_hba.conf`,
+selected explicitly by Compose's `-c hba_file=...`. It requires SCRAM-SHA-256 on TCP
+loopback and leaves private Unix-socket bootstrap/administration available. The old
+volume's HBA file is untouched and is no longer the effective configuration.
+Fresh clusters also use `--auth-host=scram-sha-256`. Normal `up -d` after rebuilding
+the image applies this policy to existing data; no manual HBA edit is needed.
+Before readiness, startup verifies that TCP accepts the original configured password
 and rejects an incorrect password specifically with a password-authentication failure.
-If an existing cluster fails this check, startup fails and the API cannot migrate:
-an operator must review the existing credentials and ordered `pg_hba.conf` rules.
-Startup never rewrites existing authentication rules or resets passwords.
+One deliberate password failure in the server log per start is expected.
+Existing SCRAM verifiers work unchanged. MD5-only/absent verifiers or mismatched
+credentials fail closed before API migrations. Use local Unix-socket administration
+to review the role's verifier type and supply the legitimate existing credentials;
+unsupported verifiers require an operator decision. Startup never resets a password,
+converts a verifier, or falls back to weaker TCP authentication.
 The API waits for this container's Postgres readiness before applying migrations.
 Port 5434 is fixed together in the Postgres command, startup/auth checks, healthcheck
 and API connection URL; changing just one is unsupported.
@@ -396,7 +404,9 @@ cd web && npm ci && npm test   # Angular unit tests (Vitest): home page, Dev Bui
 
 API networking tests also require Python 3 (included in CI and the Postgres image).
 The CI-only `node scripts/network-smoke.mjs` uses an isolated disposable Compose project
-to check free/occupied ports, repeated startup, password auth and retained history. Run it
+to check free/occupied ports, repeated startup, password auth and retained history, plus a stock-initialized legacy-volume upgrade.
+The upgrade first proves legacy TCP trust, then reuses that same disposable named volume
+and compares cluster identity, roles/verifiers, migrations and seeded history after up/restart. Run it
 only on a test host with ports 5434, 8090, 8384 and 5984 free.
 
 The snapshot store's database tests (insert a row and read it back) are skipped unless

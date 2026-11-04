@@ -30,7 +30,7 @@ test('default and compatibility Compose configurations use loopback host network
     assert.equal(db.hostname, '127.0.0.1');
     assert.equal(db.port, '5434');
     assert.equal(api.depends_on.postgres.condition, 'service_healthy');
-    assert.deepEqual(postgres.command, ['postgres', '-p', '5434', '-c', 'listen_addresses=127.0.0.1']);
+    assert.deepEqual(postgres.command, ['postgres', '-p', '5434', '-c', 'listen_addresses=127.0.0.1', '-c', 'hba_file=/etc/postgresql/dashboard-pg_hba.conf']);
     assert.ok(postgres.volumes.some(v => v.source === config.volumes.pgdata.name && v.target === '/var/lib/postgresql/data') || postgres.volumes.some(v => v.source === 'pgdata' && v.target === '/var/lib/postgresql/data'));
     assert.equal(postgres.environment.POSTGRES_HOST_AUTH_METHOD, undefined);
     assert.equal(postgres.environment.POSTGRES_INITDB_ARGS, '--auth-host=scram-sha-256');
@@ -68,4 +68,18 @@ test('Docker image installs exactly what the committed lockfile pins', () => {
   assert.match(dockerfile, /^COPY package\*\.json \.\/$/m);
   assert.match(dockerfile, /^RUN npm ci --omit=dev\b/m);
   assert.doesNotMatch(dockerfile, /npm install/);
+});
+
+
+test('selected image HBA allows private socket bootstrap and requires SCRAM for TCP', () => {
+  const rules = readFileSync(path.join(root, 'postgres/pg_hba.conf'), 'utf8')
+    .split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+  assert.deepEqual(rules, [
+    'local all all trust',
+    'host all all 127.0.0.1/32 scram-sha-256',
+  ]);
+  assert.match(readFileSync(path.join(root, 'postgres/Dockerfile'), 'utf8'),
+    /^COPY pg_hba.conf \/etc\/postgresql\/dashboard-pg_hba.conf$/m);
+  assert.match(readFileSync(path.join(root, 'docker-compose.yml'), 'utf8'),
+    /hba_file=\/etc\/postgresql\/dashboard-pg_hba.conf/);
 });
