@@ -26,3 +26,7 @@ test('ci workflow runs api tests against a postgres:16 service', () => {
   assert.match(code, /DATABASE_URL: postgresql:\/\/postgres:postgres@localhost:5432\/postgres/);
   assert.match(code, /npm run db:deploy\n\s+npm test/);
 });
+
+test('required ci executes the fresh and legacy-volume Compose smoke', () => {
+  assert.match(code, /run: node scripts\/network-smoke\.mjs/);
+});

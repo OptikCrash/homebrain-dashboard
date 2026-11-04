@@ -36,7 +36,7 @@ services:
   postgres:
     build: ./postgres
     network_mode: host
-    command: ["postgres", "-p", "5434", "-c", "listen_addresses=127.0.0.1"]
+    command: ["postgres", "-p", "5434", "-c", "listen_addresses=127.0.0.1", "-c", "hba_file=/etc/postgresql/dashboard-pg_hba.conf"]
     tmpfs: [/tmp]
     restart: unless-stopped
     post_start:

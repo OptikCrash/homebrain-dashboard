@@ -24,7 +24,7 @@ def verify(responses, fails):
     except RuntimeError as error:
         assert fails
         assert 'fixture-password' not in str(error)
-        assert 'No credentials or rules were changed' in str(error)
+        assert 'No credentials were changed' in str(error)
     assert calls[0][0][1:5] == ['-X', '-w', '-h', '127.0.0.1']
     assert calls[0][1]['env']['PGPASSWORD'] == 'fixture-password'
     assert calls[1][1]['env']['PGPASSWORD'] != 'fixture-password'
@@ -34,6 +34,9 @@ rejected = result(2, '', 'FATAL: password authentication failed for user "fixtur
 verify([result(), rejected], False)
 verify([result(), result()], True)  # trust or another passwordless method
 verify([result(), result(2, '', 'connection refused')], True)
+verify([result(), result(2, '', 'role does not exist')], True)
+verify([result(), result(2, '', 'database does not exist')], True)
+verify([result(), result(2, '', 'timeout expired')], True)
 verify([rejected, rejected], True)  # old volume with different credentials
 verify([result(stdout=''), rejected], True)
 for exception in [OSError(), subprocess.TimeoutExpired('psql', 10)]:
