@@ -28,12 +28,11 @@ Read this before working. Then read `PLAN.md` and `README.md`.
 
 - Install: `npm ci` in `api/` and `web/` (not `npm install`). `api` postinstall runs `prisma generate`.
 - Run (repo root):
-  - `npm run all` — local dev: API + Postgres (Docker) plus Angular dev server. Portable.
-  - `npm run all:homebrain` — on the Home Brain host only: same, with `docker-compose.homebrain.yml`
-    (host networking for WSL mirrored networking). `npm run backend[:homebrain]` / `npm run frontend` run one half.
+  - `npm run all` — local dev: API + Postgres (Docker) plus Angular dev server. Host networking; Compose 2.30+.
+  - `npm run all:homebrain` — compatibility alias using the now-empty Home Brain override. `npm run backend[:homebrain]` / `npm run frontend` run one half.
 - Test:
   - Root: `npm test` (dev-all script and the `ci.yml` guard).
-  - `api/`: `npm test`. DB tests skip unless `DATABASE_URL` is set; migrate first with `npm run db:deploy`.
+  - `api/`: `npm test` (networking tests need Python 3). DB tests skip unless `DATABASE_URL` is set; migrate first with `npm run db:deploy`.
   - `web/`: `npm test` (and `node --test allow-scripts.test.mjs`). `npm run build` for a production build.
 - Migrate (`api/`): `npm run db:migrate` (`prisma migrate dev`, creates migrations),
   `npm run db:deploy` (`prisma migrate deploy`, applies them), `npm run db:generate`.
@@ -56,9 +55,12 @@ Read this before working. Then read `PLAN.md` and `README.md`.
 ## Gotchas learned on the Home Brain
 
 - Syncthing (8384) and CouchDB (5984) listen on `127.0.0.1` only on the host; containers that need
-  them use host networking (`docker-compose.homebrain.yml`).
+  them use host networking (now the default Compose configuration).
 - WSL mirrored networking: a host-network container can't reach a Docker-published `127.0.0.1`
-  port. Run that dependency on the host network too (see `postgres` on 5434 in the homebrain override).
+  port. Run that dependency on the host network too (default `postgres` on 5434).
+- Compose requires 2.30+ for synchronous `post_start` startup safeguards. Never bypass those
+  hooks, rename `pgdata`/the existing project, or use `down -v` on deployment data. Port
+  probes are advisory; real binds and readiness determine startup success.
 - Builders' dev database: `127.0.0.1:5433` (user `dev`, password `dev`, db `dev`). Port 5434 is the
   dashboard's own Postgres — don't confuse the two.
 - `.env.example` is the only env file ever committed — never commit a real `.env` (or `api/.env`).

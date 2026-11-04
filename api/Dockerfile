@@ -13,8 +13,9 @@ COPY prisma ./prisma
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY src ./src
+COPY wait-ready.sh ./wait-ready.sh
 
 USER node
-EXPOSE 3000
+EXPOSE 8090
 # Apply any pending migrations, then start the API.
-CMD ["sh", "-c", "npx prisma migrate deploy && exec node src/server.js"]
+CMD ["node", "src/start.js"]

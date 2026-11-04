@@ -68,3 +68,6 @@ jobs:
       - name: Web build
         working-directory: web
         run: npm run build
+
+      - name: Backend Compose networking smoke
+        run: node scripts/network-smoke.mjs
