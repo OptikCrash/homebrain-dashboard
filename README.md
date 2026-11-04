@@ -21,7 +21,7 @@ supports) for the Angular app and for running the API tests locally.
 
 ### Shortcuts (repo root)
 
-After the `.env` setup below and a one-time `npm install` in `web/`, from the repo root:
+After the `.env` setup below and a one-time `npm ci` in `web/`, from the repo root:
 
 ```sh
 npm run backend    # docker compose up --build (API + Postgres)
@@ -29,8 +29,9 @@ npm run frontend   # Angular dev server (npm --prefix web start)
 npm run all        # both at once; Ctrl-C stops both
 ```
 
-On the Home Brain host, `npm run backend:homebrain` and `npm run all:homebrain` do the same with
-the [Home Brain override](#home-brain-deployment) applied; the plain scripts stay portable.
+The `:homebrain` scripts remain compatibility aliases; host networking is now the default.
+Dev scripts explicitly start only `api postgres`, keeping the future production web service
+separate from the Angular dev server.
 
 `npm run all` runs `scripts/dev-all.sh`, a plain POSIX `sh` script, so the root `package.json` has
 no dependencies (no `npm-run-all`/`concurrently`). It starts both in the background and, on Ctrl-C
@@ -44,94 +45,76 @@ The sections below are the detailed, manual path.
 
 ### API + Postgres (Docker)
 
-```sh
-cp .env.example .env   # then set POSTGRES_PASSWORD to something real
-docker compose up --build
-```
-
-This starts:
-
-- `api`: the dashboard's dedicated port, `DASHBOARD_PORT` from `.env` (default **8090**), mapped
-  to port 3000 inside the container.
-- `postgres`: PostgreSQL 16. Only reachable from the compose network, not published to the host.
-  Data lives in the `pgdata` volume.
-
-Check the API is up:
+Requires Linux host networking (including the Home Brain's WSL mirrored setup) and
+Docker Compose **2.30+** for synchronous startup hooks. After environment setup:
 
 ```sh
-curl -i http://localhost:8090/health
-# HTTP/1.1 200 OK
-# {"status":"ok","uptime":12.34}
+cp .env.example .env
+# Set POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB to the existing cluster credentials.
+# Set status directories and the Syncthing API key as appropriate.
+docker compose up -d
+# After source changes:
+docker compose up -d --build
+curl -i http://127.0.0.1:8090/health
+docker compose logs api postgres
+docker compose down
 ```
 
-Stop with `docker compose down` (add `-v` to also delete the Postgres volume).
+Default networking uses host networking with explicit loopback listeners:
 
-### Reaching host-bound services
+| Service | Address |
+| --- | --- |
+| Web (separate dependent issue #90) | planned `127.0.0.1:8080` |
+| API | `127.0.0.1:8090` |
+| Dashboard Postgres | `127.0.0.1:5434` |
+| Builders' devdb (outside this stack) | `127.0.0.1:5433` |
 
-Inside a container, `127.0.0.1` refers to that container, not the host. A host
-service listening only on `127.0.0.1` cannot accept connections addressed to
-its Docker bridge gateway either: this is a TCP binding issue, not a firewall issue.
+All-host networking is deliberate: on the Home Brain, WSL mirrored networking prevented
+the host-network API from reaching Docker-published loopback Postgres ports. Postgres
+therefore binds `127.0.0.1:5434` itself, without Docker publication. The API reaches
+Syncthing at `127.0.0.1:8384` and CouchDB at `127.0.0.1:5984`. Keep those services
+on loopback. CouchDB checks remain unauthenticated (200 and 401 both mean reachable);
+only Syncthing needs its API key.
 
-Compose maps `host.docker.internal` to `host-gateway` inside `api`, making the
-host reachable by name. This requires Docker Engine 20.10+ on Linux; Docker
-Desktop is not required. The mapping itself needs no host firewall change and
-keeps the existing Compose network and Postgres connection in place.
+Plain `docker compose up -d` checks startup automatically. A port collision produces a
+nonzero exit with an error naming the listener to free; inspect `docker compose logs`
+for details. No unrelated listener is stopped or contacted as a database. Probes are
+not race-proof: the actual server bind remains authoritative, and startup hooks fail
+if the service cannot become ready. Both containers retain `restart: unless-stopped`
+for crash/reboot recovery. Synchronous startup hooks still return nonzero if readiness
+fails, even during a restart loop. Repeated `up -d` leaves running containers alone;
+`docker compose restart` checks ports again after stopping their old listeners.
 
-The default bridge-network deployment requires host services to listen on an
-address reachable through that mapping. For the Home Brain's loopback-only
-Syncthing, use the override below; keep Syncthing bound to `127.0.0.1:8384`.
+Keep the existing Compose project name and `pgdata:/var/lib/postgresql/data` volume.
+Do not rename the volume, change project names to migrate, reset data, or use `down -v`.
+Existing initialized volumes keep their roles, passwords, migrations and status history.
+`POSTGRES_*` initialization variables do not reset existing passwords. Supply the actual
+existing credentials; authentication remains password-based without `trust` shortcuts.
+New clusters use `--auth-host=scram-sha-256` so initdb's loopback rules require a
+password. Before readiness, startup verifies that TCP accepts the configured password
+and rejects an incorrect password specifically with a password-authentication failure.
+If an existing cluster fails this check, startup fails and the API cannot migrate:
+an operator must review the existing credentials and ordered `pg_hba.conf` rules.
+Startup never rewrites existing authentication rules or resets passwords.
+The API waits for this container's Postgres readiness before applying migrations.
+Port 5434 is fixed together in the Postgres command, startup/auth checks, healthcheck
+and API connection URL; changing just one is unsupported.
 
-### Home Brain deployment
-
-This Linux host uses an override because Syncthing's GUI/API intentionally listens
-only on host loopback. The API uses host networking so it can reach that listener.
-Requires Docker Compose **2.24.4+** (for the `!reset` merge tags).
-
-Copy `.env.example` to `.env`, set real Postgres credentials and the Syncthing API
-key, and use these host-specific values:
+The old `docker-compose.homebrain.yml` is now an empty compatibility override. Existing
+two-file commands and `:homebrain` npm scripts still work, but no override is needed.
+Host status mounts remain read-only. To validate without starting anything:
 
 ```sh
-TEAM_STATUS_DIR=/srv/homebrain/hermes-dev/work/logs/status
-HOST_STATUS_DIR=/srv/homebrain/status
-SYNCTHING_URL=http://127.0.0.1:8384
-DASHBOARD_PORT=8090
+docker compose --env-file .env.example config
 ```
 
-Run from the repository root:
+### Optional local development
 
-```sh
-npm run backend:homebrain   # foreground; add the Angular dev server with npm run all:homebrain
-```
-
-The manual equivalent (add `-d` to run it detached):
-
-```sh
-docker compose -f docker-compose.yml -f docker-compose.homebrain.yml up --build
-```
-
-The override sets `SYNCTHING_URL=http://127.0.0.1:8384` and runs Postgres with
-host networking, listening only on `127.0.0.1:5434`, leaving port **5433** for the
-existing development database. On this box, WSL mirrored networking prevents a
-host-network API container from reaching a Docker-published loopback port.
-Postgres host networking avoids that hop, using the same approach as the API
-override from #32.
-It builds the API's `DATABASE_URL` from `POSTGRES_USER`, `POSTGRES_PASSWORD`, and
-`POSTGRES_DB`, using `127.0.0.1:5434` instead of Compose's `postgres` DNS name.
-Port 5434 must be free before starting this deployment.
-
-With host networking, there is no Docker port mapping: `DASHBOARD_PORT` sets the
-app's `PORT` directly (default **8090**), and the health check uses that same port.
-Choose the port the app should actually listen on; Docker cannot remap it.
-The team status directory remains mounted read-only at `/logs/status`, and the
-host status directory at `/srv/homebrain/status`.
-
-To check the merged configuration without starting containers:
-
-```sh
-docker compose -f docker-compose.yml -f docker-compose.homebrain.yml config
-```
-
-Use the same two `-f` arguments for subsequent `up`, `logs`, and `down` commands.
+`npm run backend` starts only API and Postgres in the foreground; `npm run frontend`
+starts Angular on port 4200, and `npm run all` starts both. These use the same loopback
+API and Postgres settings. For direct API runs, `PORT` defaults to 8090 and must be an
+integer from 1 to 65535. Compose fixes the API port to 8090. The old `DASHBOARD_PORT` setting is retired;
+existing custom-port installations must update their clients to 8090.
 
 ### Database (Prisma)
 
@@ -144,7 +127,7 @@ host (export it, or put it in `api/.env`, which is gitignored), then:
 
 ```sh
 cd api
-npm install            # also runs `prisma generate`
+npm ci                 # also runs `prisma generate`
 npm run db:migrate     # prisma migrate dev: applies migrations, creates new ones after schema edits
 ```
 
@@ -313,7 +296,7 @@ other statuses, network errors and five-second request timeouts return
 `{ reachable: false, error }`. Successful readings have `error: undefined`.
 Base paths are preserved. URLs containing credentials, queries or fragments are
 rejected, and redirects are disabled. No CouchDB credentials are needed.
-For the loopback-only listener, use the Home Brain host networking deployment.
+For the loopback-only listener, use the default host networking deployment.
 This reader performs no polling, database writes or Express routing.
 
 ### Syncthing status service
@@ -362,7 +345,7 @@ automatic retention is not implemented.
 
 ```sh
 cd web
-npm install
+npm ci
 npm start          # ng serve, http://localhost:4200
 ```
 
@@ -390,9 +373,8 @@ shows container state, Hermes API up/down, readiness (`n/a` while the API is dow
 message/reply times in UTC — never message contents. A bot whose `checked_at` is more than three
 minutes old is flagged "status stale"; a bot with no status file says so. Live state only, no history strip.
 
-The dev server proxies `/api` to the API at `http://localhost:8090` (`web/proxy.conf.json`), so
-start the API with `docker compose up` first. If you changed `DASHBOARD_PORT`, change the proxy
-target to match.
+The dev server proxies `/api` to the API at `http://127.0.0.1:8090` (`web/proxy.conf.json`), so
+start the API with `docker compose up` first. For a direct API run with a custom `PORT`, change the proxy target to match.
 
 `npm run build` writes a production build to `web/dist/`.
 
@@ -408,16 +390,21 @@ skipped scripts, review them before adding them (`npm install-scripts ls` lists 
 ### Tests
 
 ```sh
-cd api && npm install && npm test   # node:test: GET /health, snapshot store and team status unit tests
-cd web && npm install && npm test   # Angular unit tests (Vitest): home page, Dev Builders card, timeline strip
+cd api && npm ci && npm test   # node:test: GET /health, snapshot store and team status unit tests
+cd web && npm ci && npm test   # Angular unit tests (Vitest): home page, Dev Builders card, timeline strip
 ```
+
+API networking tests also require Python 3 (included in CI and the Postgres image).
+The CI-only `node scripts/network-smoke.mjs` uses an isolated disposable Compose project
+to check free/occupied ports, repeated startup, password auth and retained history. Run it
+only on a test host with ports 5434, 8090, 8384 and 5984 free.
 
 The snapshot store's database tests (insert a row and read it back) are skipped unless
 `DATABASE_URL` is set. To run them, migrate a database first:
 
 ```sh
 cd api
-export DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/DATABASE
+export DATABASE_URL=postgresql://USER:PASSWORD@127.0.0.1:5434/DATABASE
 npm run db:deploy && npm test
 ```
 

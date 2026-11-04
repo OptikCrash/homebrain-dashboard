@@ -23,10 +23,19 @@ const stopCouchdbPolling = startCouchdbPolling({ poll: couchdbStatus.poll, inter
 
 const stopBackupPolling = startBackupPolling({ poll: backupStatus.poll, intervalMs: backupIntervalMs });
 
-const port = Number(process.env.PORT) || 3000;
+const port = require('./listen').port();
 
-const server = createApp({ backupStatus, teamStatus, syncthingStatus, couchdbStatus }).listen(port, () => {
-  console.log(`homebrain-dashboard API listening on port ${port}`);
+const server = createApp({ backupStatus, teamStatus, syncthingStatus, couchdbStatus }).listen(port, '127.0.0.1', () => {
+  // Only the container startup entrypoint participates in Compose readiness.
+  if (require.main?.filename === require.resolve('./start')) {
+    require('node:fs').writeFileSync('/tmp/dashboard-ready', '');
+  }
+  console.log(`homebrain-dashboard API listening on 127.0.0.1:${port}`);
+});
+
+server.once('error', () => {
+  console.error(`API failed to bind 127.0.0.1:${port}; free the port or stop the other listener.`);
+  process.exit(1);
 });
 
 // Let `docker compose down` stop the container promptly.

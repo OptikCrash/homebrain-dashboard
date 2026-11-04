@@ -1,50 +1,57 @@
 services:
   api:
     build: ./api
+    tmpfs: [/tmp]
     restart: unless-stopped
-    extra_hosts: ["host.docker.internal:host-gateway"]
+    post_start:
+      - command: ["sh", "/app/wait-ready.sh"]
+    network_mode: host
     environment:
-      PORT: 3000
+      PORT: 8090
       # Used by Prisma; migrations are applied on container start.
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:5434/${POSTGRES_DB}
       TEAM_STATUS_DIR: /logs/status
       HOST_STATUS_DIR: /srv/homebrain/status
-      SYNCTHING_URL: ${SYNCTHING_URL:-http://host.docker.internal:8384}
+      SYNCTHING_URL: ${SYNCTHING_URL:-http://127.0.0.1:8384}
       SYNCTHING_API_KEY: ${SYNCTHING_API_KEY:-}
       SYNCTHING_FOLDERS: ${SYNCTHING_FOLDERS:-}
       SYNCTHING_POLL_INTERVAL_MS: ${SYNCTHING_POLL_INTERVAL_MS:-30000}
       BACKUP_POLL_INTERVAL_MS: ${BACKUP_POLL_INTERVAL_MS:-30000}
-      COUCHDB_URL: ${COUCHDB_URL:-http://host.docker.internal:5984}
+      COUCHDB_URL: ${COUCHDB_URL:-http://127.0.0.1:5984}
       COUCHDB_POLL_INTERVAL_MS: ${COUCHDB_POLL_INTERVAL_MS:-30000}
     volumes:
       # Host team roster and instance files, mounted read-only.
       - ${TEAM_STATUS_DIR:-./logs/status}:/logs/status:ro
       # Host-written backup and bot status JSON (M5, M6), mounted read-only.
       - ${HOST_STATUS_DIR:-/srv/homebrain/status}:/srv/homebrain/status:ro
-    ports:
-      # The dashboard's own dedicated host port (no reverse proxy).
-      - "${DASHBOARD_PORT:-8090}:3000"
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/health"]
       interval: 30s
       timeout: 5s
       retries: 3
 
   postgres:
-    image: postgres:16-alpine
+    build: ./postgres
+    network_mode: host
+    command: ["postgres", "-p", "5434", "-c", "listen_addresses=127.0.0.1"]
+    tmpfs: [/tmp]
     restart: unless-stopped
+    post_start:
+      - command: ["sh", "/usr/local/bin/wait-ready.sh"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
-    # Not published to the host: only the API talks to it, over the compose network.
+      # Fresh clusters only: put password auth before initdb loopback defaults.
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    # Preserve the existing volume and Compose project identity.
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "test -f /tmp/dashboard-ready && pg_isready -h 127.0.0.1 -p 5434 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10

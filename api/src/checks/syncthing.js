@@ -4,7 +4,7 @@ const isObject = (value) => value !== null && typeof value === 'object' && !Arra
 // No logging or persistence. Never expose client exceptions or response bodies:
 // either can contain the API key. All requests use a bounded timeout.
 async function readSyncthingStatus({
-  url = process.env.SYNCTHING_URL,
+  url = process.env.SYNCTHING_URL ?? 'http://127.0.0.1:8384',
   apiKey = process.env.SYNCTHING_API_KEY,
   folders = process.env.SYNCTHING_FOLDERS || '',
   fetch: httpClient = globalThis.fetch,
