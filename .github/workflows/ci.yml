@@ -70,6 +70,7 @@ jobs:
         run: npm run build
 
       # Builds all images and runs an isolated, disposable stack (web, API, Postgres) with
-      # credential-free loopback fixtures; it always cleans up its own project only.
-      - name: Compose deployment smoke
+      # credential-free loopback fixtures, then a stock legacy-volume upgrade; it always
+      # cleans up its own project only.
+      - name: Compose deployment and legacy-volume upgrade smoke
         run: node scripts/network-smoke.mjs

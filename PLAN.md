@@ -269,7 +269,8 @@ Acceptance criteria:
   Postgres).
 - **Postgres (default `docker-compose.yml`)**: `network_mode: host`, no
   `ports`, and the explicit command
-  `["postgres", "-p", "5434", "-c", "listen_addresses=127.0.0.1"]`, so it
+  `["postgres", "-p", "5434", "-c", "listen_addresses=127.0.0.1",
+  "-c", "hba_file=/etc/postgresql/dashboard-pg_hba.conf"]`, so it
   listens on `127.0.0.1:5434` only (the approach already proven in the Home
   Brain override). The healthcheck targets `-h 127.0.0.1 -p 5434`. Preserved:
   - **Password auth**: credentials from `.env` (`POSTGRES_*`, required) and
@@ -281,11 +282,23 @@ Acceptance criteria:
     renamed or replaced.
   - **Existing volume authentication**: an already-initialized `pgdata`
     keeps its existing roles and passwords. No `pg_hba.conf` shortcuts (no
-    added `trust` lines, no loosened auth methods) and no silent credential
+    added TCP `trust` lines, no loosened TCP auth methods; the private local
+    Unix-socket bootstrap/administration access is preserved) and no silent credential
     resets (no init scripts or `ALTER ROLE` run to make `.env` match). The
     `POSTGRES_*` initialization env vars only apply when the data directory is
     first created; they do not retroactively change passwords in an existing
     volume, so `.env` must keep the credentials that volume was created with.
+  - **#95 acceptance correction (Chris explicitly approved)**: preserve existing
+    credentials/data, not vulnerable TCP trust behavior. Select a shipped SCRAM-only
+    TCP HBA for both fresh and initialized volumes through normal Compose startup;
+    leave the volume's HBA untouched. Keep private Unix-socket administration.
+    Existing SCRAM credentials continue working; MD5-only/absent verifiers or wrong
+    configured credentials fail safely with operator guidance, never automatic resets
+    or weaker authentication. Readiness requires correct-password success and a
+    specific wrong-password authentication rejection. Required `ci` must independently
+    initialize a stock legacy trust volume, prove its old behavior, upgrade that same
+    volume and verify identity, roles/verifiers, migrations and history across restart.
+    This blocks #90 and M10 deployability until merged; no production verification implied.
   - Migrations applied on API start (`prisma migrate deploy`), the read-only
     status mounts, and the API waiting on Postgres readiness
     (`service_healthy`).

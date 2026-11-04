@@ -97,12 +97,19 @@ Do not rename the volume, change project names to migrate, reset data, or use `d
 Existing initialized volumes keep their roles, passwords, migrations and status history.
 `POSTGRES_*` initialization variables do not reset existing passwords. Supply the actual
 existing credentials; authentication remains password-based without `trust` shortcuts.
-New clusters use `--auth-host=scram-sha-256` so initdb's loopback rules require a
-password. Before readiness, startup verifies that TCP accepts the configured password
+Both fresh and initialized volumes use the image's `/etc/postgresql/dashboard-pg_hba.conf`,
+selected explicitly by Compose's `-c hba_file=...`. It requires SCRAM-SHA-256 on TCP
+loopback and leaves private Unix-socket bootstrap/administration available. The old
+volume's HBA file is untouched and is no longer the effective configuration.
+Fresh clusters also use `--auth-host=scram-sha-256`. Normal `up -d` after rebuilding
+the image applies this policy to existing data; no manual HBA edit is needed.
+Before readiness, startup verifies that TCP accepts the original configured password
 and rejects an incorrect password specifically with a password-authentication failure.
-If an existing cluster fails this check, startup fails and the API cannot migrate:
-an operator must review the existing credentials and ordered `pg_hba.conf` rules.
-Startup never rewrites existing authentication rules or resets passwords.
+Existing SCRAM verifiers work unchanged. MD5-only/absent verifiers or mismatched
+credentials fail closed before API migrations. Use local Unix-socket administration
+to review the role's verifier type and supply the legitimate existing credentials;
+unsupported verifiers require an operator decision. Startup never resets a password,
+converts a verifier, or falls back to weaker TCP authentication.
 The API waits for this container's Postgres readiness before applying migrations.
 Port 5434 is fixed together in the Postgres command, startup/auth checks, healthcheck
 and API connection URL; changing just one is unsupported.
@@ -110,28 +117,6 @@ and API connection URL; changing just one is unsupported.
 The startup check deliberately tries one random wrong password, so every Postgres start
 logs one expected `FATAL: password authentication failed for user "..."` line. That line
 alone is normal; the startup fails only when the dashboard's own error message follows.
-
-#### Existing `pgdata` created without `--auth-host`
-
-A volume first initialized by the stock Postgres image (before this setting existed) may
-contain loopback `trust` lines in `pg_hba.conf` (`host all all 127.0.0.1/32 trust`). Then the
-wrong password is accepted, and startup stops with "TCP must reject an incorrect password
-... operator review of existing pg_hba.conf is required". Nothing has been changed at that
-point, and the API has not migrated. To inspect without changing anything, read the file
-through a read-only mount of the existing volume:
-
-```sh
-docker volume ls --filter name=pgdata                  # e.g. homebrain-dashboard_pgdata
-docker run --rm -v homebrain-dashboard_pgdata:/data:ro postgres:16-alpine \
-  grep -v '^#' /data/pg_hba.conf
-```
-
-Recovery is a deliberate operator decision, never automatic: back up the volume first,
-then (for example) change only the loopback `trust` methods to `scram-sha-256`, keeping the
-existing roles and passwords, and run `docker compose up -d` again so the check re-runs.
-Do not set `POSTGRES_HOST_AUTH_METHOD=trust`, reset passwords to match `.env`, recreate the
-volume or use `down -v`; if the configured password itself fails, fix `.env` to the
-volume's real credentials instead.
 
 The old `docker-compose.homebrain.yml` is now an empty compatibility override. Existing
 two-file commands and `:homebrain` npm scripts still work, but no override is needed.
@@ -456,8 +441,15 @@ cd web && npm ci && npm test   # Angular unit tests (Vitest): home page, Dev Bui
 
 API networking tests also require Python 3 (included in CI and the Postgres image).
 The CI-only `node scripts/network-smoke.mjs` uses an isolated disposable Compose project
-to check free/occupied ports, repeated startup, password auth and retained history. Run it
-only on a test host with ports 5434, 8090, 8384 and 5984 free.
+to check free/occupied ports (8080, 8090, 5434), repeated startup, password auth and retained
+history, the production web UI (HTML, hashed assets, UI-only SPA fallback, `/api` proxy with
+API status/body/content type passthrough including 404/503) and loopback-only listeners, plus a
+stock-initialized legacy-volume upgrade.
+The upgrade first proves legacy TCP trust, then reuses that same disposable named volume
+and compares cluster identity, roles/verifiers, migrations and seeded history after up/restart,
+and re-checks the web UI. It uses loopback Syncthing/CouchDB fixtures and throwaway
+credentials, so it proves the stack's wiring, not reachability of the real Home Brain services.
+It refuses to start (stopping nothing) unless ports 8080, 8090, 5434, 8384 and 5984 are free.
 
 The snapshot store's database tests (insert a row and read it back) are skipped unless
 `DATABASE_URL` is set. To run them, migrate a database first:

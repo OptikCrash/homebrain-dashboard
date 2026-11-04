@@ -41,6 +41,8 @@ const env = {
 };
 const args = ['compose', '--env-file', '/dev/null', '-p', project, '-f', 'docker-compose.yml'];
 const compose = (...more) => exec('docker', [...args, ...more], { env, timeout: 600000, maxBuffer: 8 * 1024 * 1024 });
+const legacy = `${project}-legacy`;
+const docker = (...args) => exec('docker', args, { env, timeout: 240000, maxBuffer: 8 * 1024 * 1024 });
 const syncthing = httpServer((req, res) => {
   assert.equal(req.headers['x-api-key'], 'fixture');
   res.setHeader('Content-Type', 'application/json');
@@ -113,52 +115,129 @@ try {
 
   // Production web: HTML, hashed assets, UI-only SPA fallback and the same-origin /api proxy.
   const web = 'http://127.0.0.1:8080';
-  const page = await fetch(`${web}/`);
-  assert.equal(page.status, 200);
-  assert.match(page.headers.get('content-type'), /^text\/html/);
-  const html = await page.text();
-  assert.match(html, /<app-root/);
-  const assets = [...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css))"/g)].map(match => match[1]);
-  assert.ok(assets.some(asset => asset.endsWith('.js')), 'index.html must reference the production bundle');
-  for (const asset of assets) {
-    const response = await fetch(new URL(asset, `${web}/`));
-    assert.equal(response.status, 200, asset);
-    assert.match(response.headers.get('content-type'), asset.endsWith('.js') ? /javascript/ : /text\/css/);
-  }
-  const route = await fetch(`${web}/some/ui/route`);
-  assert.equal(route.status, 200);
-  assert.equal(await route.text(), html);
-  const missing = await fetch(`${web}/missing-file.js`);
-  assert.equal(missing.status, 404);
-  assert.doesNotMatch(await missing.text(), /<app-root/);
-  // Proxied responses match the API's own status, content type and body.
-  const same = async (path, status) => {
-    const [direct, proxied] = await Promise.all([fetch(`http://127.0.0.1:8090${path}`), fetch(`${web}${path}`)]);
-    assert.equal(direct.status, status, path);
-    assert.equal(proxied.status, status, path);
-    assert.equal(proxied.headers.get('content-type'), direct.headers.get('content-type'), path);
-    return [await direct.text(), await proxied.text()];
+  const checkWeb = async () => {
+    const page = await fetch(`${web}/`);
+    assert.equal(page.status, 200);
+    assert.match(page.headers.get('content-type'), /^text\/html/);
+    const html = await page.text();
+    assert.match(html, /<app-root/);
+    const assets = [...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css))"/g)].map(match => match[1]);
+    assert.ok(assets.some(asset => asset.endsWith('.js')), 'index.html must reference the production bundle');
+    for (const asset of assets) {
+      const response = await fetch(new URL(asset, `${web}/`));
+      assert.equal(response.status, 200, asset);
+      assert.match(response.headers.get('content-type'), asset.endsWith('.js') ? /javascript/ : /text\/css/);
+    }
+    const route = await fetch(`${web}/some/ui/route`);
+    assert.equal(route.status, 200);
+    assert.equal(await route.text(), html);
+    const missing = await fetch(`${web}/missing-file.js`);
+    assert.equal(missing.status, 404);
+    assert.doesNotMatch(await missing.text(), /<app-root/);
+    // Proxied responses match the API's own status, content type and body.
+    const same = async (path, status) => {
+      const [direct, proxied] = await Promise.all([fetch(`http://127.0.0.1:8090${path}`), fetch(`${web}${path}`)]);
+      assert.equal(direct.status, status, path);
+      assert.equal(proxied.status, status, path);
+      assert.equal(proxied.headers.get('content-type'), direct.headers.get('content-type'), path);
+      return [await direct.text(), await proxied.text()];
+    };
+    const [couchDirect, couchProxied] = await same('/api/status/couchdb', 200);
+    assert.ok(JSON.parse(couchProxied).current, couchDirect);
+    for (const [path, status] of [['/api/team/status', 503], ['/api/does-not-exist?probe=1', 404], ['/api', 404]]) {
+      const [direct, proxied] = await same(path, status);
+      assert.equal(proxied, direct, path);
+      assert.doesNotMatch(proxied, /<app-root/);
+    }
+    // No wildcard or non-loopback listener on the stack's ports (IPv4 or IPv6).
+    const listeners = (await exec('ss', ['-Hltn'])).stdout.split('\n')
+      .map(line => line.trim().split(/\s+/)[3]).filter(Boolean)
+      .filter(address => /:(8080|8090|5434)$/.test(address));
+    assert.deepEqual(listeners.sort(), ['127.0.0.1:5434', '127.0.0.1:8080', '127.0.0.1:8090']);
   };
-  const [couchDirect, couchProxied] = await same('/api/status/couchdb', 200);
-  assert.ok(JSON.parse(couchProxied).current, couchDirect);
-  for (const [path, status] of [['/api/team/status', 503], ['/api/does-not-exist?probe=1', 404], ['/api', 404]]) {
-    const [direct, proxied] = await same(path, status);
-    assert.equal(proxied, direct, path);
-    assert.doesNotMatch(proxied, /<app-root/);
-  }
+  await checkWeb();
 
-  // No wildcard or non-loopback listener on the stack's ports (IPv4 or IPv6).
-  const listeners = (await exec('ss', ['-Hltn'])).stdout.split('\n')
-    .map(line => line.trim().split(/\s+/)[3]).filter(Boolean)
-    .filter(address => /:(8080|8090|5434)$/.test(address));
-  assert.deepEqual(listeners.sort(), ['127.0.0.1:5434', '127.0.0.1:8080', '127.0.0.1:8090']);
-  console.log('Compose networking smoke passed: collisions, free ports, migrations, repeated up, restart and production web.');
+  // A restart of the fresh hardened cluster above is NOT a legacy upgrade.
+  // Independently initialize with the stock image, no hardened args/entrypoint,
+  // no host networking/publication. Only this random project's volume is reused.
+  const apiImage = (await compose('images', '-q', 'api')).stdout.trim();
+  await compose('down', '--volumes');
+  await docker('volume', 'create', '--label', `com.docker.compose.project=${project}`,
+    '--label', 'com.docker.compose.volume=pgdata', `${project}_pgdata`);
+  await docker('run', '-d', '--name', legacy, '--network', 'none',
+    '-e', 'POSTGRES_USER=smoke', '-e', 'POSTGRES_PASSWORD=smoke', '-e', 'POSTGRES_DB=smoke',
+    '-v', `${project}_pgdata:/var/lib/postgresql/data`, 'postgres:16-alpine');
+  const legacySql = query => docker('exec', legacy, 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
+    '-U', 'smoke', '-d', 'smoke', '-Atc', query);
+  for (let attempt = 0; ; attempt++) {
+    // A successful TCP query proves final startup (stock init's temporary server disables TCP).
+    try {
+      await docker('exec', legacy, 'psql', '-X', '-w', '-h', '127.0.0.1', '-U', 'smoke', '-d', 'smoke', '-c', 'SELECT 1');
+      break;
+    } catch (error) {
+      if (attempt === 60) throw error;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+  assert.equal((await docker('exec', legacy, 'cat', '/var/lib/postgresql/data/PG_VERSION')).stdout.trim(), '16');
+  assert.match((await legacySql('SELECT type, address, auth_method FROM pg_hba_file_rules')).stdout, /host\|127\.0\.0\.1\|trust/);
+  const legacyWrong = await docker('exec', '-e', 'PGPASSWORD=wrong-fixture', legacy,
+    'psql', '-X', '-w', '-h', '127.0.0.1', '-U', 'smoke', '-d', 'smoke', '-Atc', 'SELECT 1');
+  assert.equal(legacyWrong.stdout.trim(), '1', 'legacy fixture must actually accept a wrong TCP password');
+  await docker('run', '--rm', '--network', `container:${legacy}`,
+    '-e', 'DATABASE_URL=postgresql://smoke:smoke@127.0.0.1:5432/smoke', apiImage,
+    'npx', 'prisma', 'migrate', 'deploy');
+  await legacySql("CREATE ROLE upgrade_role LOGIN PASSWORD 'throwaway-upgrade'; SET password_encryption='md5'; CREATE ROLE legacy_md5 LOGIN PASSWORD 'throwaway-md5'; INSERT INTO status_snapshots (service,status,detail) VALUES ('legacy-upgrade','healthy','{\"sentinel\":95}')");
+  const identityQuery = 'SELECT system_identifier FROM pg_control_system()';
+  const rolesQuery = 'SELECT rolname, rolpassword FROM pg_authid ORDER BY rolname';
+  const historyQuery = "SELECT row_to_json(s) FROM status_snapshots s WHERE service='legacy-upgrade'";
+  const migrationQuery = 'SELECT row_to_json(m) FROM _prisma_migrations m ORDER BY id';
+  const before = [];
+  for (const query of [identityQuery, rolesQuery, historyQuery, migrationQuery]) before.push((await legacySql(query)).stdout);
+  const originalHba = (await docker('exec', legacy, 'cat', '/var/lib/postgresql/data/pg_hba.conf')).stdout;
+  await docker('stop', legacy);
+  await docker('rm', legacy); // Named volume is retained; normal Compose takes it over.
+  const checkUpgrade = async () => {
+    assert.equal((await sql('SHOW listen_addresses')).stdout.trim(), '127.0.0.1');
+    assert.equal((await sql('SHOW port')).stdout.trim(), '5434');
+    assert.equal((await sql('SHOW hba_file')).stdout.trim(), '/etc/postgresql/dashboard-pg_hba.conf');
+    assert.equal((await sql("SELECT count(*) FROM pg_hba_file_rules WHERE error IS NOT NULL OR (type LIKE 'host%' AND auth_method <> 'scram-sha-256')")).stdout.trim(), '0');
+    await checkPassword();
+    // Do not print verifiers, even for disposable roles.
+    for (const [index, query] of [identityQuery, rolesQuery, historyQuery, migrationQuery].entries()) {
+      assert.ok((await sql(query)).stdout === before[index], `legacy preservation check ${index} failed`);
+    }
+    assert.ok((await compose('exec', '-T', 'postgres', 'cat', '/var/lib/postgresql/data/pg_hba.conf')).stdout === originalHba);
+    const role = await compose('exec', '-T', '-e', 'PGPASSWORD=throwaway-upgrade', 'postgres',
+      'psql', '-X', '-w', '-h', '127.0.0.1', '-p', '5434', '-U', 'upgrade_role', '-d', 'smoke', '-Atc', 'SELECT 1');
+    assert.equal(role.stdout.trim(), '1');
+    await assert.rejects(compose('exec', '-T', '-e', 'PGPASSWORD=throwaway-md5', 'postgres',
+      'psql', '-X', '-w', '-h', '127.0.0.1', '-p', '5434', '-U', 'legacy_md5', '-d', 'smoke', '-Atc', 'SELECT 1'), error => {
+      assert.match(error.stderr, /password authentication failed for user "legacy_md5"/);
+      return true;
+    });
+    assert.equal((await fetch('http://127.0.0.1:8090/health')).status, 200);
+    await checkWeb();
+  };
+  await compose('up', '-d', '--wait', '--wait-timeout', '120');
+  await checkUpgrade();
+  await compose('restart');
+  await compose('up', '-d', '--wait', '--wait-timeout', '120');
+  await compose('up', '-d');
+  await checkUpgrade();
+  console.log('Compose smoke passed: fresh init, collisions on all three ports, production web/proxy and stock legacy-volume upgrade/restart preservation.');
 } catch (error) {
   const logs = await compose('logs', '--no-color').catch(() => ({ stdout: '', stderr: '' }));
   console.error(logs.stdout, logs.stderr);
   throw error;
 } finally {
-  await compose('down', '--volumes');
+  await docker('rm', '-f', legacy).catch(() => {});
+  // A failed compose down must not skip the remaining cleanup; it still fails the run.
+  await compose('down', '--volumes').catch(error => {
+    console.error('Smoke cleanup: compose down failed:', error.message);
+    process.exitCode = 1;
+  });
+  await docker('volume', 'rm', `${project}_pgdata`).catch(() => {});
   if (syncthing.listening) await close(syncthing);
   if (couchdb.listening) await close(couchdb);
   await rm(directory, { recursive: true, force: true });
