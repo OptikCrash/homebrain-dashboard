@@ -23,6 +23,14 @@ test('root scripts point at compose, the web dev server and dev-all.sh', () => {
   assert.equal(pkg.devDependencies, undefined);
 });
 
+test('dev shortcuts start only api and postgres, never the production web service', () => {
+  for (const name of ['backend', 'backend:homebrain']) {
+    assert.match(pkg.scripts[name], / up --build api postgres$/);
+  }
+  const devAll = readFileSync(script, 'utf8');
+  assert.deepEqual(devAll.match(/^docker compose .*$/gm), ['docker compose "$@" up --build api postgres &']);
+});
+
 test('dev-all.sh starts backend and frontend and stops both on SIGINT', { timeout: 10_000 }, (t) =>
   runDevAll(t, [], 'docker compose up --build api postgres'));
 

@@ -69,5 +69,7 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: Backend Compose networking smoke
+      # Builds all images and runs an isolated, disposable stack (web, API, Postgres) with
+      # credential-free loopback fixtures; it always cleans up its own project only.
+      - name: Compose deployment smoke
         run: node scripts/network-smoke.mjs

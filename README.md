@@ -11,67 +11,72 @@ See `PLAN.md` for goals and milestones.
 ## Layout
 
 - `api/`: Express API (Node.js), runs in Docker.
-- `web/`: Angular app. For now it runs on the Angular dev server, not in a container.
-- `docker-compose.yml`: the API plus PostgreSQL.
+- `web/`: Angular app. Production: built in Docker and served by nginx (`web/Dockerfile`,
+  `web/nginx.conf`). The Angular dev server is an optional development workflow.
+- `docker-compose.yml`: the whole deployment: web, API and PostgreSQL.
 
-## Running locally
+## Deployment (Docker Compose)
 
-Requirements: Docker with Compose v2, and Node.js `^20.19.0 || ^22.12.0 || ^24.0.0` (the range Angular 21
-supports) for the Angular app and for running the API tests locally.
-
-### Shortcuts (repo root)
-
-After the `.env` setup below and a one-time `npm ci` in `web/`, from the repo root:
-
-```sh
-npm run backend    # docker compose up --build (API + Postgres)
-npm run frontend   # Angular dev server (npm --prefix web start)
-npm run all        # both at once; Ctrl-C stops both
-```
-
-The `:homebrain` scripts remain compatibility aliases; host networking is now the default.
-Dev scripts explicitly start only `api postgres`, keeping the future production web service
-separate from the Angular dev server.
-
-`npm run all` runs `scripts/dev-all.sh`, a plain POSIX `sh` script, so the root `package.json` has
-no dependencies (no `npm-run-all`/`concurrently`). It starts both in the background and, on Ctrl-C
-or SIGTERM, sends SIGTERM to both and waits for them to exit (compose stops its containers;
-`docker compose down` still removes them). npm doesn't reliably pass SIGTERM on to `ng serve`, so
-the script signals the whole npm process tree (found with `pgrep -P`), which frees port 4200. Output from both is interleaved in one terminal. It
-needs a Unix shell (Linux, macOS, WSL); on plain Windows use the two separate scripts.
-`npm test` at the root checks these scripts (`scripts/dev-all.test.mjs`, stubbed `docker`/`npm`).
-
-The sections below are the detailed, manual path.
-
-### API + Postgres (Docker)
-
-Requires Linux host networking (including the Home Brain's WSL mirrored setup) and
-Docker Compose **2.30+** for synchronous startup hooks. After environment setup:
+Requirements: Docker with Compose **2.30+** (synchronous startup hooks) and Linux host
+networking (including the Home Brain's WSL mirrored setup). No host Node.js install is
+needed: the images build the API and the Angular app themselves with `npm ci`.
 
 ```sh
 cp .env.example .env
 # Set POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB to the existing cluster credentials.
 # Set status directories and the Syncthing API key as appropriate.
 docker compose up -d
-# After source changes:
-docker compose up -d --build
-curl -i http://127.0.0.1:8090/health
-docker compose logs api postgres
-docker compose down
 ```
 
-Default networking uses host networking with explicit loopback listeners:
+That one command builds the images (first run) and starts Postgres, the API (which applies
+migrations) and the production web UI. Open <http://127.0.0.1:8080>.
+
+Everyday commands:
+
+```sh
+docker compose up -d --build          # rebuild after pulling new code; data is kept
+docker compose ps                     # state and health of web, api, postgres
+docker compose logs -f web api postgres
+docker compose stop                   # stop without removing anything
+docker compose down                   # remove containers; keeps the pgdata volume
+```
+
+Never use `docker compose down -v` (or `--volumes`) on the deployment: it deletes `pgdata`.
+
+Verify a running deployment:
+
+```sh
+curl -i http://127.0.0.1:8090/health                 # API directly: 200 {"status":"ok",...}
+curl -i http://127.0.0.1:8080/healthz                # web server: 200 "dashboard-web ok"
+curl -i http://127.0.0.1:8080/                       # production index.html
+curl -i http://127.0.0.1:8080/api/status/couchdb     # API through the same-origin proxy
+curl -i http://127.0.0.1:8080/api/does-not-exist     # API's own 404 JSON, not index.html
+ss -ltn | grep -E ':(8080|8090|5434) '               # every listener is 127.0.0.1
+```
+
+Ports, all on host loopback and fixed in `docker-compose.yml`:
 
 | Service | Address |
 | --- | --- |
-| Web (separate dependent issue #90) | planned `127.0.0.1:8080` |
-| API | `127.0.0.1:8090` |
+| Web UI (nginx, production build) | `http://127.0.0.1:8080` |
+| API | `http://127.0.0.1:8090` |
 | Dashboard Postgres | `127.0.0.1:5434` |
 | Builders' devdb (outside this stack) | `127.0.0.1:5433` |
 
+The web and API ports are separate: the browser only talks to 8080. nginx serves the
+built Angular files and proxies `/api/*` to `127.0.0.1:8090` with path and query unchanged;
+API status codes, bodies and content types pass through (a 404 or 503 from the API stays
+that). Only UI routes fall back to `index.html`; a missing file (anything with an extension)
+is a plain 404. `/healthz` is the web server's own readiness check. The web image holds
+no `.env`, credentials or host `node_modules` (`web/.dockerignore`) and the service gets no
+environment variables or mounts.
+
 All-host networking is deliberate: on the Home Brain, WSL mirrored networking prevented
-the host-network API from reaching Docker-published loopback Postgres ports. Postgres
-therefore binds `127.0.0.1:5434` itself, without Docker publication. The API reaches
+the host-network API from reaching Docker-published loopback Postgres ports. So nothing is
+Docker-published: every service runs with `network_mode: host` and binds `127.0.0.1` itself
+(Postgres `listen_addresses=127.0.0.1` on 5434, the API on 8090, nginx `listen 127.0.0.1:8080`),
+with no `0.0.0.0` or IPv6 wildcard listener. Being on the host network, the web server reaches
+the loopback-only API directly; a bridge network with a host-gateway entry could not. The API reaches
 Syncthing at `127.0.0.1:8384` and CouchDB at `127.0.0.1:5984`. Keep those services
 on loopback. CouchDB checks remain unauthenticated (200 and 401 both mean reachable);
 only Syncthing needs its API key.
@@ -80,7 +85,9 @@ Plain `docker compose up -d` checks startup automatically. A port collision prod
 nonzero exit with an error naming the listener to free; inspect `docker compose logs`
 for details. No unrelated listener is stopped or contacted as a database. Probes are
 not race-proof: the actual server bind remains authoritative, and startup hooks fail
-if the service cannot become ready. Both containers retain `restart: unless-stopped`
+if the service cannot become ready. This covers all three ports: 5434 (Postgres), 8090
+(API) and 8080 (web; nginx exits on "Address in use" and the container log says to free
+127.0.0.1:8080). All containers retain `restart: unless-stopped`
 for crash/reboot recovery. Synchronous startup hooks still return nonzero if readiness
 fails, even during a restart loop. Repeated `up -d` leaves running containers alone;
 `docker compose restart` checks ports again after stopping their old listeners.
@@ -100,6 +107,32 @@ The API waits for this container's Postgres readiness before applying migrations
 Port 5434 is fixed together in the Postgres command, startup/auth checks, healthcheck
 and API connection URL; changing just one is unsupported.
 
+The startup check deliberately tries one random wrong password, so every Postgres start
+logs one expected `FATAL: password authentication failed for user "..."` line. That line
+alone is normal; the startup fails only when the dashboard's own error message follows.
+
+#### Existing `pgdata` created without `--auth-host`
+
+A volume first initialized by the stock Postgres image (before this setting existed) may
+contain loopback `trust` lines in `pg_hba.conf` (`host all all 127.0.0.1/32 trust`). Then the
+wrong password is accepted, and startup stops with "TCP must reject an incorrect password
+... operator review of existing pg_hba.conf is required". Nothing has been changed at that
+point, and the API has not migrated. To inspect without changing anything, read the file
+through a read-only mount of the existing volume:
+
+```sh
+docker volume ls --filter name=pgdata                  # e.g. homebrain-dashboard_pgdata
+docker run --rm -v homebrain-dashboard_pgdata:/data:ro postgres:16-alpine \
+  grep -v '^#' /data/pg_hba.conf
+```
+
+Recovery is a deliberate operator decision, never automatic: back up the volume first,
+then (for example) change only the loopback `trust` methods to `scram-sha-256`, keeping the
+existing roles and passwords, and run `docker compose up -d` again so the check re-runs.
+Do not set `POSTGRES_HOST_AUTH_METHOD=trust`, reset passwords to match `.env`, recreate the
+volume or use `down -v`; if the configured password itself fails, fix `.env` to the
+volume's real credentials instead.
+
 The old `docker-compose.homebrain.yml` is now an empty compatibility override. Existing
 two-file commands and `:homebrain` npm scripts still work, but no override is needed.
 Host status mounts remain read-only. To validate without starting anything:
@@ -108,13 +141,39 @@ Host status mounts remain read-only. To validate without starting anything:
 docker compose --env-file .env.example config
 ```
 
-### Optional local development
+## Local development (optional)
 
-`npm run backend` starts only API and Postgres in the foreground; `npm run frontend`
-starts Angular on port 4200, and `npm run all` starts both. These use the same loopback
-API and Postgres settings. For direct API runs, `PORT` defaults to 8090 and must be an
-integer from 1 to 65535. Compose fixes the API port to 8090. The old `DASHBOARD_PORT` setting is retired;
-existing custom-port installations must update their clients to 8090.
+Hot-reload development uses the Angular dev server on `http://localhost:4200` instead of the
+production web container. It needs Node.js `^20.19.0 || ^22.12.0 || ^24.0.0` (the range
+Angular 21 supports), also used for running the tests locally.
+
+### Shortcuts (repo root)
+
+After the `.env` setup above and a one-time `npm ci` in `web/`, from the repo root:
+
+```sh
+npm run backend    # docker compose up --build api postgres (no production web)
+npm run frontend   # Angular dev server (npm --prefix web start)
+npm run all        # both at once; Ctrl-C stops both
+```
+
+The dev scripts start only the `api` and `postgres` services, never the production `web`
+service, so the dev server is the only UI. If the full deployment is already running, it
+already serves the API; stop it first (`docker compose stop`) or skip `npm run backend`.
+The `:homebrain` scripts remain compatibility aliases; host networking is the default.
+
+`npm run all` runs `scripts/dev-all.sh`, a plain POSIX `sh` script, so the root `package.json` has
+no dependencies (no `npm-run-all`/`concurrently`). It starts both in the background and, on Ctrl-C
+or SIGTERM, sends SIGTERM to both and waits for them to exit (compose stops its containers;
+`docker compose down` still removes them). npm doesn't reliably pass SIGTERM on to `ng serve`, so
+the script signals the whole npm process tree (found with `pgrep -P`), which frees port 4200. Output from both is interleaved in one terminal. It
+needs a Unix shell (Linux, macOS, WSL); on plain Windows use the two separate scripts.
+`npm test` at the root checks these scripts (`scripts/dev-all.test.mjs`, stubbed `docker`/`npm`).
+
+These use the same loopback API and Postgres settings. For direct API runs, `PORT` defaults
+to 8090 and must be an integer from 1 to 65535. Compose fixes the API port to 8090. The old
+`DASHBOARD_PORT` setting is retired; existing custom-port installations must update their
+clients to 8090.
 
 ### Database (Prisma)
 
@@ -374,9 +433,10 @@ message/reply times in UTC — never message contents. A bot whose `checked_at` 
 minutes old is flagged "status stale"; a bot with no status file says so. Live state only, no history strip.
 
 The dev server proxies `/api` to the API at `http://127.0.0.1:8090` (`web/proxy.conf.json`), so
-start the API with `docker compose up` first. For a direct API run with a custom `PORT`, change the proxy target to match.
+start the API with `npm run backend` first. For a direct API run with a custom `PORT`, change the proxy target to match.
 
-`npm run build` writes a production build to `web/dist/`.
+`npm run build` writes a production build to `web/dist/web/browser/`; the web image runs the same
+build and serves that directory with nginx.
 
 #### Install scripts
 

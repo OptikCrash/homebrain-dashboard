@@ -1,4 +1,21 @@
 services:
+  web:
+    build: ./web
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    post_start:
+      - command: ["sh", "/usr/local/bin/wait-ready.sh"]
+    network_mode: host
+    # nginx listens on 127.0.0.1:8080 and proxies /api to the API on 127.0.0.1:8090.
+    depends_on:
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/dashboard-ready && wget -qO- http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   api:
     build: ./api
     tmpfs: [/tmp]
