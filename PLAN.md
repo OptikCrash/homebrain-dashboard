@@ -17,6 +17,8 @@ status plus history over time (e.g. "Syncthing was down for 2h yesterday").
 ## Stack details
 - Single repo, Angular app and Express API as subfolders (as now).
 - Dockerized: API + Postgres run in containers (Dockerfile + docker-compose).
+  From M10, the production Angular build runs in Compose too (see M10); the
+  Angular dev server stays an optional, non-containerized dev workflow.
 - ORM: Prisma (Chris wants to try it; schema is simple enough that the
   learning curve is low-risk here).
 - History/incident timelines: simple built-in rendering (colored timeline
@@ -24,6 +26,10 @@ status plus history over time (e.g. "Syncthing was down for 2h yesterday").
   (e.g. Chart.js) only if a later milestone needs real trend graphs
   (durations, counts over time) that a strip can't express.
 - Network exposure: dashboard gets its own dedicated port, no reverse proxy.
+  From M10 the shipped deployment is loopback-only: web on `127.0.0.1:8080`,
+  API on `127.0.0.1:8090`. The web server's same-origin `/api` proxy to the
+  API is part of the dashboard itself, not a separate reverse proxy in front
+  of it.
 
 ## Health signals per service
 - **Dev team status**: read from this box — the team's roster and live work
@@ -238,6 +244,93 @@ invented process): `add-dashboard-card` (Sabine), `add-status-endpoint`
 `AGENTS.md` gets a "Skills" section listing them so Codex builders read them
 too.
 
+### M10 — Loopback-only full Compose deployment
+Goal: after documented `.env` setup, plain `docker compose up -d` builds and
+starts the whole dashboard (Postgres, API, production web) on the Home Brain,
+and nothing in the shipped deployment listens beyond host loopback.
+
+**Implementation dependency:** this PLAN entry lands first, on its own. No
+container/runtime work starts until it has merged **and** the Postgres
+networking decision below is settled by Chris.
+
+Acceptance criteria:
+- **API (default `docker-compose.yml`)**: `network_mode: host`, `PORT` 8090,
+  and an explicit `127.0.0.1` bind in `api/src/server.js` (today it calls
+  `listen(port)` with no host, i.e. all interfaces). The API's `ports`,
+  bridge DNS (`postgres` host name) and `extra_hosts` entries are removed as
+  incompatible with host networking. `DATABASE_URL` uses `127.0.0.1` and a
+  Postgres host port that is neither 5432 nor 5433 (5433 is the builders' dev
+  database). `SYNCTHING_URL` / `COUCHDB_URL` default to `http://127.0.0.1:8384`
+  / `http://127.0.0.1:5984`.
+- **No wildcard listeners**: no `0.0.0.0`, `::` or unqualified port listener
+  or publication anywhere in the shipped dashboard deployment (API, web,
+  Postgres).
+- **Postgres**: reachable only on `127.0.0.1`, proposed port **5434** (already
+  the dashboard's port in the Home Brain override; free-ness on the
+  deployment host is checked there, not assumed). How it is exposed depends on
+  the pending decision below. Preserved: the `pgdata` volume, credentials from
+  `.env` (`POSTGRES_*`, required), migrations applied on API start
+  (`prisma migrate deploy`), the read-only status mounts, and the API waiting
+  on Postgres readiness (`service_healthy`).
+- **Web image**: multi-stage Dockerfile for `web/` — build stage runs `npm ci`
+  against the committed `web/package-lock.json` and the production Angular
+  build; the serving stage is a small static server with no dev server and no
+  Node build toolchain at runtime.
+- **Web in Compose**: a `web` service in the default `docker-compose.yml`,
+  proposed endpoint `http://127.0.0.1:8080`. The server itself listens on an
+  explicit loopback address (e.g. host networking with a `127.0.0.1:8080`
+  listen directive) — a `127.0.0.1:` port publication over a wildcard
+  in-container listener does not count. Being on the host network, it reaches
+  the loopback-only API without an exposed gateway.
+- **Same-origin `/api`**: the web server proxies `/api/*` to
+  `127.0.0.1:8090` with paths unchanged, and passes API status codes and
+  bodies through (a 404/500/503 from the API stays that, not the SPA's
+  `index.html`). SPA fallback to `index.html` applies only to UI routes.
+- **npm scripts**: `npm run backend[:homebrain]` and `npm run all[:homebrain]`
+  (`scripts/dev-all.sh`) currently run every Compose service next to the
+  Angular dev server. Scope them to `api` + `postgres` so dev workflows don't
+  also start the production `web` service; update `scripts/dev-all.test.mjs`.
+- **Docs**: README and `.env.example` describe the production deployment: port
+  ownership (8080 web, 8090 API, 5434 Postgres, 5433 reserved for dev),
+  loopback URLs, and rebuild / start / stop / verify steps, with the Angular
+  dev server documented separately as an optional dev workflow. The
+  implementation builder updates `AGENTS.md` where its commands, layout or
+  gotchas go stale (e.g. "Angular dev server, not containerized", the
+  override-only host networking notes).
+- **Tests and CI**: regression tests for the listen addresses and the Compose
+  listener/exposure configuration (no wildcard binds, expected ports), plus a
+  Docker-enabled CI smoke path that builds both images, starts the stack,
+  confirms migrations ran, and checks: API `/health`; served production HTML
+  and assets on the web endpoint; same-origin `/api` proxying; an API non-200
+  response passed through unchanged. Syncthing/CouchDB use isolated,
+  credential-free loopback fixtures in CI. Live Syncthing access is not
+  claimed as verified without real, authorized evidence from the host.
+- **Unchanged guardrails**: the required `ci` check (job id `ci`, no `name:`,
+  `contents: read`, no secrets, never `pull_request_target`) and both reviews
+  stay; no secrets and no Docker socket in any application container.
+
+**Pending decision — Postgres networking (Chris to choose; do not
+implement until chosen).** Chris asked for Postgres published on
+`127.0.0.1`. The README, `AGENTS.md` and `docker-compose.homebrain.yml` record
+that on the Home Brain, WSL mirrored networking stopped a host-network API
+container from reaching a Docker-published `127.0.0.1` port; the override
+therefore runs Postgres itself with `network_mode: host` and
+`postgres -p 5434 -c listen_addresses=127.0.0.1`. These are different
+deployments, not two spellings of one:
+- **(A) Host-network Postgres** — move the known-working override approach
+  into the default `docker-compose.yml`. Postgres listens on `127.0.0.1:5434`
+  directly; no Docker port publication. Works on the Home Brain today.
+- **(B) Bridge publication `127.0.0.1:5434:5432`** — literal Docker
+  publication as requested. Must be verified on the actual Home Brain host
+  (host-network API → published loopback port) before the deployment is
+  claimed to work; the known WSL limitation suggests it may fail.
+
+Either way, plain `docker compose up -d` must be sufficient on its own — an
+extra required override file doesn't meet the goal — and the WSL workaround
+is neither silently dropped nor contradicted in the docs. What happens to
+`docker-compose.homebrain.yml` (removed, or reduced to whatever is still
+host-specific) follows from the choice.
+
 ## Decisions
 - `package-lock.json` is committed (root, `web/`, and `api/`) and Docker
   builds use `npm ci`, not `npm install` — reproducible builds. A PR that
@@ -250,6 +343,11 @@ too.
 - Stack: single repo, Dockerized API + Postgres, Prisma as ORM, no charting
   library for v1 (simple timeline strips instead), dashboard on its own
   dedicated port (no reverse proxy).
+- M10 (planned): the shipped deployment binds loopback only (web
+  `127.0.0.1:8080`, API `127.0.0.1:8090`, Postgres `127.0.0.1`, proposed
+  5434) and starts from the default `docker-compose.yml` alone. This narrows
+  the v1 "LAN-only" assumption to host-only; off-host access stays an open
+  question below.
 
 ## Open questions
 - Dev builder status (M1) reads host paths (`$LOGS/*.pid`, log tails) and
@@ -267,3 +365,6 @@ too.
   user; Chris hasn't provisioned one yet. v1 ships reachability only; revisit
   once that user exists.
 - Auth/exposure model if dashboard needs to be reachable off-LAN later.
+- M10 Postgres networking: (A) host-network Postgres on `127.0.0.1:5434` or
+  (B) bridge publication `127.0.0.1:5434:5432`, verified on the host first.
+  Pending Chris; see M10. Blocks M10 implementation.
