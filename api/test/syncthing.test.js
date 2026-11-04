@@ -101,3 +101,116 @@ test('non-200 folder response preserves other folder readings', async () => {
   assert.match(result.error, /db\/status.*non-200/);
   assert.deepEqual(result.folders, [{ id: 'photos', ...synced }]);
 });
+
+const realV217 = require("./fixtures/syncthing-v2.1.7/db-status.json");
+test("genuine v2.1.7 db/status retains both configured folders", async () => {
+  assert.ok(Object.hasOwn(realV217, "needTotalItems"));
+  assert.equal(Object.hasOwn(realV217, "needItems"), false);
+  const result = await readSyncthingStatus({ ...config, fetch: client({ notes: realV217, photos: realV217 }) });
+  assert.deepEqual(result.folders, ["notes", "photos"].map((id) => ({ id, state: "idle", errors: 0, needItems: 0, needBytes: 0 })));
+  assert.equal(result.error, undefined);
+});
+
+// Derived from the real response; these are synthetic validation/health cases, not captures.
+test('derived pending totals include directories, symlinks and deletions', async () => {
+  const notes = { ...realV217, state: 'syncing', needFiles: 0, needDirectories: 2,
+    needSymlinks: 3, needDeletes: 4, needTotalItems: 9, needBytes: 400, errors: 2 };
+  const result = await readSyncthingStatus({ ...config, fetch: client({ notes }) });
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.folders[0], { id: 'notes', state: 'syncing', errors: 2, needItems: 9, needBytes: 400 });
+});
+
+test('modern fields take precedence over conflicting legacy aliases', async () => {
+  const notes = { ...realV217, needTotalItems: 3, needItems: 99, errors: 2, pullErrors: 99 };
+  const result = await readSyncthingStatus({ ...config, fetch: client({ notes }) });
+  assert.equal(result.error, undefined);
+  assert.equal(result.folders[0].needItems, 3);
+  assert.equal(result.folders[0].errors, 2);
+});
+
+test('derived missing or invalid counters fail per folder without fallback or zero defaults', async () => {
+  for (const field of ['needTotalItems', 'needBytes', 'errors']) {
+    for (const value of [undefined, null, -1, '0', 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+      const notes = { ...realV217, [field]: value, needItems: 0, pullErrors: 0 };
+      const result = await readSyncthingStatus({ ...config, fetch: client({ notes, photos: realV217 }) });
+      assert.equal(result.error, 'Invalid Syncthing db/status response', `${field}: ${value}`);
+      assert.deepEqual(result.folders, [{ id: 'photos', state: 'idle', errors: 0, needItems: 0, needBytes: 0 }]);
+    }
+  }
+  for (const field of ['needTotalItems', 'needBytes', 'errors']) {
+    const notes = { ...realV217 };
+    delete notes[field];
+    if (field === 'errors') delete notes.pullErrors;
+    const result = await readSyncthingStatus({ ...config, fetch: client({ notes }) });
+    assert.equal(result.error, 'Invalid Syncthing db/status response');
+  }
+});
+
+test('derived valid maximum counters retain precision', async () => {
+  const notes = { ...realV217, needTotalItems: Number.MAX_SAFE_INTEGER,
+    needBytes: Number.MAX_SAFE_INTEGER, errors: Number.MAX_SAFE_INTEGER };
+  const result = await readSyncthingStatus({ ...config, fetch: client({ notes }) });
+  assert.equal(result.error, undefined);
+  assert.equal(result.folders[0].needItems, Number.MAX_SAFE_INTEGER);
+});
+
+test('real response and derived pending/error cases retain status-service health classification', async () => {
+  const { createSyncthingStatus } = require('../src/status/syncthing');
+  for (const [changes, expected] of [
+    [{}, 'healthy'], [{ needTotalItems: 1, needFiles: 0, needDirectories: 1 }, 'unhealthy'],
+    [{ needTotalItems: 1, needFiles: 0, needSymlinks: 1 }, 'unhealthy'],
+    [{ needTotalItems: 1, needFiles: 0, needDeletes: 1 }, 'unhealthy'],
+    [{ errors: 1 }, 'unhealthy'], [{ needBytes: 1 }, 'unhealthy'],
+    [{ needTotalItems: null }, 'unhealthy'],
+  ]) {
+    let saved;
+    const status = createSyncthingStatus({ store: { record: async (row) => { saved = row; } },
+      read: () => readSyncthingStatus({ ...config, fetch: client({ notes: { ...realV217, ...changes }, photos: realV217 }) }) });
+    await status.poll();
+    assert.equal(saved.status, expected, JSON.stringify(changes));
+  }
+});
+
+test('modern zero totals and errors override nonzero aliases', async () => {
+  const result = await readSyncthingStatus({ ...config, fetch: client({
+    notes: { ...realV217, needItems: 99, pullErrors: 99 },
+  }) });
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.folders[0], { id: 'notes', state: 'idle', errors: 0, needItems: 0, needBytes: 0 });
+});
+
+test('folder requests remain sequential and bounded after deduplication', async () => {
+  let requests = 0;
+  let active = 0;
+  const normal = client({ notes: realV217, photos: realV217 });
+  const result = await readSyncthingStatus({ ...config, fetch: async (url, options) => {
+    requests++;
+    assert.equal(active++, 0);
+    try { return await normal(url, options); } finally { active--; }
+  } });
+  assert.equal(requests, 4);
+  assert.equal(result.error, undefined);
+});
+
+test('each endpoint has a five-second timeout and safe failure preserves later folders', async (t) => {
+  t.mock.method(AbortSignal, 'timeout', (milliseconds) => {
+    assert.equal(milliseconds, 5000);
+    const controller = new AbortController();
+    queueMicrotask(() => controller.abort(new Error(config.apiKey)));
+    return controller.signal;
+  });
+  for (const endpoint of ['/rest/system/status', '/rest/system/connections', 'notes']) {
+    const normal = client({ notes: realV217, photos: realV217 });
+    const result = await readSyncthingStatus({ ...config, fetch: (url, options) => {
+      const target = new URL(url);
+      const key = target.searchParams.get('folder') || target.pathname;
+      if (key !== endpoint) return normal(url, options);
+      return new Promise((resolve, reject) => options.signal.addEventListener('abort',
+        () => reject(options.signal.reason), { once: true }));
+    } });
+    assert.ok(result.error);
+    assert.ok(!JSON.stringify(result).includes(config.apiKey));
+    assert.equal(result.reachable, endpoint !== '/rest/system/status');
+    if (result.reachable) assert.ok(result.folders.some((folder) => folder.id === 'photos'));
+  }
+});
