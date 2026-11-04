@@ -282,7 +282,8 @@ Acceptance criteria:
     renamed or replaced.
   - **Existing volume authentication**: an already-initialized `pgdata`
     keeps its existing roles and passwords. No `pg_hba.conf` shortcuts (no
-    added `trust` lines, no loosened auth methods) and no silent credential
+    added TCP `trust` lines, no loosened TCP auth methods; the private local
+    Unix-socket bootstrap/administration access is preserved) and no silent credential
     resets (no init scripts or `ALTER ROLE` run to make `.env` match). The
     `POSTGRES_*` initialization env vars only apply when the data directory is
     first created; they do not retroactively change passwords in an existing

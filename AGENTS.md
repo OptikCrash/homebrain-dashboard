@@ -6,8 +6,12 @@ Read this before working. Then read `PLAN.md` and `README.md`.
 
 - `api/` — Express + Prisma backend (runs in Docker). Schema and migrations in `api/prisma/`.
   Tests: `api/test/*.test.js` (`node:test`).
-- `web/` — Angular frontend (Angular dev server, not containerized). Tests: `web/src/**/*.spec.ts`
-  (Vitest via `ng test`), plus `web/allow-scripts.test.mjs`.
+- `web/` — Angular frontend. Production: multi-stage `web/Dockerfile` (`npm ci` + build, then
+  nginx serving `dist/web/browser`) with `web/nginx.conf` (`listen 127.0.0.1:8080`, `/api` proxy
+  to `127.0.0.1:8090`). Tests: `web/src/**/*.spec.ts` (Vitest via `ng test`), plus
+  `web/allow-scripts.test.mjs`; the image/nginx contract is checked in `api/test/deployment.test.js`.
+- `docker-compose.yml` — the full deployment: `web` 8080, `api` 8090, `postgres` 5434, all host network.
+- `scripts/network-smoke.mjs` — CI-only Docker smoke of the whole stack (needs 8080/8090/5434/8384/5984 free).
 - `scripts/dev-all.sh` — backs `npm run all`; tested by `scripts/dev-all.test.mjs`.
 - Status-file contracts: see PLAN.md
   [Dev team status file format](PLAN.md#dev-team-status-file-format) and
@@ -28,7 +32,9 @@ Read this before working. Then read `PLAN.md` and `README.md`.
 
 - Install: `npm ci` in `api/` and `web/` (not `npm install`). `api` postinstall runs `prisma generate`.
 - Run (repo root):
-  - `npm run all` — local dev: API + Postgres (Docker) plus Angular dev server. Host networking; Compose 2.30+.
+  - `docker compose up -d` — production: web (http://127.0.0.1:8080), API and Postgres. Compose 2.30+.
+  - `npm run all` — local dev: `api` + `postgres` only (Docker, never the production `web`) plus
+    the Angular dev server on 4200. Keep dev shortcuts scoped to `api postgres`.
   - `npm run all:homebrain` — compatibility alias using the now-empty Home Brain override. `npm run backend[:homebrain]` / `npm run frontend` run one half.
 - Test:
   - Root: `npm test` (dev-all script and the `ci.yml` guard).
@@ -40,7 +46,8 @@ Read this before working. Then read `PLAN.md` and `README.md`.
 ## CI
 
 - A PR isn't done until the `ci` check (`.github/workflows/ci.yml`) is green. It runs the installs,
-  tests above (api against a `postgres:16` service) and the web build on Node 24. Keep the job id
+  tests above (api against a `postgres:16` service), the web build on Node 24 and the Docker
+  Compose smoke (`scripts/network-smoke.mjs`). Keep the job id
   `ci` with no `name:`, `contents: read`, no secrets, never `pull_request_target`.
 
 ## Conventions
@@ -69,6 +76,10 @@ Read this before working. Then read `PLAN.md` and `README.md`.
   and incorrect TCP passwords before readiness. Port 5434 is linked in the command,
   healthcheck, startup/auth checks and API URL. The required CI smoke independently
   initializes a stock legacy volume, proves TCP trust, then upgrades that same volume.
+- nginx in `web/`: the stock image's `/docker-entrypoint.d` and `conf.d` add a wildcard
+  `listen 80` server, so the Dockerfile deletes them. `proxy_pass http://127.0.0.1:8090;` has no
+  URI on purpose (path and query pass unchanged); never add `proxy_intercept_errors`/`error_page`
+  for `/api`, or API errors turn into `index.html`.
 - Builders' dev database: `127.0.0.1:5433` (user `dev`, password `dev`, db `dev`). Port 5434 is the
   dashboard's own Postgres — don't confuse the two.
 - `.env.example` is the only env file ever committed — never commit a real `.env` (or `api/.env`).

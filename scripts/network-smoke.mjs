@@ -4,12 +4,32 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer } from 'node:net';
 import { createServer as httpServer } from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const exec = promisify(execFile);
+const ports = [8080, 8090, 5434, 8384, 5984];
+const listen = (server, port) => new Promise((resolve, reject) => {
+  server.once('error', reject);
+  server.listen(port, '127.0.0.1', resolve);
+});
+const close = server => new Promise(resolve => server.close(resolve));
+// Refuse to run beside anything already on these ports; never stop or contact it.
+for (const port of ports) {
+  const probe = createServer();
+  try {
+    await listen(probe, port);
+  } catch {
+    console.error(`Smoke test needs 127.0.0.1:${port} free; another listener holds it. Nothing was started or stopped.`);
+    process.exit(1);
+  }
+  await close(probe);
+}
 const directory = await mkdtemp(join(tmpdir(), 'dashboard-smoke-'));
+// Malformed roster: /api/team/status answers 503, used to check non-200 passthrough.
+await chmod(directory, 0o755);
+await writeFile(join(directory, 'roles.json'), '{}', { mode: 0o644 });
 const project = `dashboard-smoke-${process.pid}-${Date.now()}`;
 const env = {
   ...process.env,
@@ -20,14 +40,9 @@ const env = {
   COUCHDB_URL: 'http://127.0.0.1:5984',
 };
 const args = ['compose', '--env-file', '/dev/null', '-p', project, '-f', 'docker-compose.yml'];
-const compose = (...more) => exec('docker', [...args, ...more], { env, timeout: 240000, maxBuffer: 8 * 1024 * 1024 });
+const compose = (...more) => exec('docker', [...args, ...more], { env, timeout: 600000, maxBuffer: 8 * 1024 * 1024 });
 const legacy = `${project}-legacy`;
 const docker = (...args) => exec('docker', args, { env, timeout: 240000, maxBuffer: 8 * 1024 * 1024 });
-const close = server => new Promise(resolve => server.close(resolve));
-const listen = (server, port) => new Promise((resolve, reject) => {
-  server.once('error', reject);
-  server.listen(port, '127.0.0.1', resolve);
-});
 const syncthing = httpServer((req, res) => {
   assert.equal(req.headers['x-api-key'], 'fixture');
   res.setHeader('Content-Type', 'application/json');
@@ -42,7 +57,7 @@ try {
   await listen(couchdb, 5984);
   await compose('config', '--quiet');
   await compose('build');
-  for (const port of [5434, 8090]) {
+  for (const port of [5434, 8090, 8080]) {
     let contacts = 0;
     const standin = createServer(socket => { contacts++; socket.destroy(); });
     await listen(standin, port);
@@ -84,6 +99,7 @@ try {
   await compose('restart', 'postgres');
   await compose('up', '-d', '--wait', '--wait-timeout', '120', 'postgres');
   await compose('restart', 'api');
+  await compose('restart', 'web');
   await compose('up', '-d', '--wait', '--wait-timeout', '120');
   await compose('up', '-d');
   await checkPassword();
@@ -96,6 +112,51 @@ try {
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
   assert.equal(healthy, 2, 'loopback fixtures must both produce healthy history');
+
+  // Production web: HTML, hashed assets, UI-only SPA fallback and the same-origin /api proxy.
+  const web = 'http://127.0.0.1:8080';
+  const checkWeb = async () => {
+    const page = await fetch(`${web}/`);
+    assert.equal(page.status, 200);
+    assert.match(page.headers.get('content-type'), /^text\/html/);
+    const html = await page.text();
+    assert.match(html, /<app-root/);
+    const assets = [...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css))"/g)].map(match => match[1]);
+    assert.ok(assets.some(asset => asset.endsWith('.js')), 'index.html must reference the production bundle');
+    for (const asset of assets) {
+      const response = await fetch(new URL(asset, `${web}/`));
+      assert.equal(response.status, 200, asset);
+      assert.match(response.headers.get('content-type'), asset.endsWith('.js') ? /javascript/ : /text\/css/);
+    }
+    const route = await fetch(`${web}/some/ui/route`);
+    assert.equal(route.status, 200);
+    assert.equal(await route.text(), html);
+    const missing = await fetch(`${web}/missing-file.js`);
+    assert.equal(missing.status, 404);
+    assert.doesNotMatch(await missing.text(), /<app-root/);
+    // Proxied responses match the API's own status, content type and body.
+    const same = async (path, status) => {
+      const [direct, proxied] = await Promise.all([fetch(`http://127.0.0.1:8090${path}`), fetch(`${web}${path}`)]);
+      assert.equal(direct.status, status, path);
+      assert.equal(proxied.status, status, path);
+      assert.equal(proxied.headers.get('content-type'), direct.headers.get('content-type'), path);
+      return [await direct.text(), await proxied.text()];
+    };
+    const [couchDirect, couchProxied] = await same('/api/status/couchdb', 200);
+    assert.ok(JSON.parse(couchProxied).current, couchDirect);
+    for (const [path, status] of [['/api/team/status', 503], ['/api/does-not-exist?probe=1', 404], ['/api', 404]]) {
+      const [direct, proxied] = await same(path, status);
+      assert.equal(proxied, direct, path);
+      assert.doesNotMatch(proxied, /<app-root/);
+    }
+    // No wildcard or non-loopback listener on the stack's ports (IPv4 or IPv6).
+    const listeners = (await exec('ss', ['-Hltn'])).stdout.split('\n')
+      .map(line => line.trim().split(/\s+/)[3]).filter(Boolean)
+      .filter(address => /:(8080|8090|5434)$/.test(address));
+    assert.deepEqual(listeners.sort(), ['127.0.0.1:5434', '127.0.0.1:8080', '127.0.0.1:8090']);
+  };
+  await checkWeb();
+
   // A restart of the fresh hardened cluster above is NOT a legacy upgrade.
   // Independently initialize with the stock image, no hardened args/entrypoint,
   // no host networking/publication. Only this random project's volume is reused.
@@ -156,6 +217,7 @@ try {
       return true;
     });
     assert.equal((await fetch('http://127.0.0.1:8090/health')).status, 200);
+    await checkWeb();
   };
   await compose('up', '-d', '--wait', '--wait-timeout', '120');
   await checkUpgrade();
@@ -163,14 +225,18 @@ try {
   await compose('up', '-d', '--wait', '--wait-timeout', '120');
   await compose('up', '-d');
   await checkUpgrade();
-  console.log('Backend smoke passed: fresh init, collisions and stock legacy-volume upgrade/restart preservation.');
+  console.log('Compose smoke passed: fresh init, collisions on all three ports, production web/proxy and stock legacy-volume upgrade/restart preservation.');
 } catch (error) {
   const logs = await compose('logs', '--no-color').catch(() => ({ stdout: '', stderr: '' }));
   console.error(logs.stdout, logs.stderr);
   throw error;
 } finally {
   await docker('rm', '-f', legacy).catch(() => {});
-  await compose('down', '--volumes');
+  // A failed compose down must not skip the remaining cleanup; it still fails the run.
+  await compose('down', '--volumes').catch(error => {
+    console.error('Smoke cleanup: compose down failed:', error.message);
+    process.exitCode = 1;
+  });
   await docker('volume', 'rm', `${project}_pgdata`).catch(() => {});
   if (syncthing.listening) await close(syncthing);
   if (couchdb.listening) await close(couchdb);
