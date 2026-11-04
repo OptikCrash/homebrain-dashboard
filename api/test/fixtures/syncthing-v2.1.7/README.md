@@ -8,6 +8,13 @@ API keys, folder IDs or device IDs (`remoteSequence` is empty). The timestamp
 is the disposable instance's original value. All additional pending/error
 payloads in `syncthing.test.js` are explicitly derived synthetic cases.
 
+**Do not repeat this capture.** It was a manually launched service, which the
+"no ad hoc network services" rule in `AGENTS.md` and `PLAN.md` (Decisions) now
+prohibits (#102). The record below documents provenance only and is not a
+procedure. A new real response must be recorded read-only from an
+already-running service. Otherwise, write the fixture by hand and label it
+synthetic.
+
 Binary source:
 https://github.com/syncthing/syncthing/releases/download/v2.1.7/syncthing-linux-amd64-v2.1.7.tar.gz
 
@@ -20,30 +27,20 @@ Downloaded archive SHA-256:
 syncthing v2.1.7 "Hafnium Hornet" (go1.27.3 linux-amd64) builder@github.syncthing.net 2026-10-20 19:54:38 UTC
 ```
 
-Capture procedure (use a new disposable directory and available loopback ports):
+Historical record of how the capture was made (#99):
 
-1. Extract the upstream release. Run `syncthing generate --home=<throwaway> --no-port-probing`.
-   This only generates disposable configuration/certificates; do not use a real config.
-2. Before serving, edit that generated `config.xml`: add a `folder` element with
-   `id="fixture-notes"`, `label="Fixture"`, `type="sendreceive"`, and a path under
-   the throwaway directory. Set `gui/address` to `127.0.0.1:18384` and
-   `options/listenAddress` to `tcp://127.0.0.1:22099`. Set
-   `globalAnnounceEnabled`, `localAnnounceEnabled`, `relaysEnabled`, `natEnabled`
-   to `false`, `urAccepted` to `-1`, and `autoUpgradeIntervalH` to `0`.
-   Verify all settings before launching; never run the generated defaults.
-3. Run `syncthing serve --home=<throwaway> --no-browser --no-restart --no-upgrade`.
-   Wait for the empty folder's initial scan to complete and state to become idle.
-4. Read `gui/apikey` directly from the disposable XML in a capture script and send
-   it only as the `X-API-Key` request header to
-   `http://127.0.0.1:18384/rest/db/status?folder=fixture-notes`.
-   Write the raw response bytes to the fixture file, without printing the key.
-5. Stop the disposable process. Do not commit its config, keys, certificates or DB.
-
-The capture used loopback listeners only, no Docker port publishing, no peers,
-no discovery/relays, and no production configuration changes. An initial failed
-configuration edit was accidentally followed by a default launch; it exited on
-occupied 8384 without starting a second API listener. The successful capture was
-made only after the settings above were verified.
+- A new key, certificate and config were generated into a throwaway `--home`
+  directory. No real Syncthing config was used or written.
+- **First launch (unsafe):** a config-edit step failed. The chained `serve` then
+  ran on the generated defaults. That run enabled global/local discovery and
+  the relay listener, and tried wildcard sync listeners (`0.0.0.0:22000`
+  TCP/QUIC). It exited about a second later because 22000 and 8384 were already
+  in use, and no API listener started.
+- **Second launch:** the config was first set to GUI `127.0.0.1:18384`, listen
+  `tcp://127.0.0.1:22099`, with discovery, relays, NAT, usage reporting and
+  auto-upgrade disabled. One `GET` of the endpoint above was written to
+  `db-status.json`, and the process was then stopped. There were no peers and
+  no Docker port publishing.
 
 Upstream wire contract:
 https://github.com/syncthing/syncthing/blob/v2.1.7/lib/model/folder_summary.go
