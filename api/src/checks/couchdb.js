@@ -1,7 +1,7 @@
 const REQUEST_TIMEOUT_MS = 5000;
 
 async function readCouchdbStatus({
-  url = process.env.COUCHDB_URL,
+  url = process.env.COUCHDB_URL ?? 'http://127.0.0.1:5984',
   fetch: httpClient = globalThis.fetch,
 } = {}) {
   const fail = (error) => ({ reachable: false, error });

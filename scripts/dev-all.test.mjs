@@ -14,20 +14,28 @@ const script = new URL('./dev-all.sh', import.meta.url).pathname;
 const homebrainFiles = '-f docker-compose.yml -f docker-compose.homebrain.yml';
 
 test('root scripts point at compose, the web dev server and dev-all.sh', () => {
-  assert.equal(pkg.scripts.backend, 'docker compose up --build');
+  assert.equal(pkg.scripts.backend, 'docker compose up --build api postgres');
   assert.equal(pkg.scripts.frontend, 'npm --prefix web start');
   assert.equal(pkg.scripts.all, 'sh scripts/dev-all.sh');
-  assert.equal(pkg.scripts['backend:homebrain'], `docker compose ${homebrainFiles} up --build`);
+  assert.equal(pkg.scripts['backend:homebrain'], `docker compose ${homebrainFiles} up --build api postgres`);
   assert.equal(pkg.scripts['all:homebrain'], `sh scripts/dev-all.sh ${homebrainFiles}`);
   assert.equal(pkg.dependencies, undefined);
   assert.equal(pkg.devDependencies, undefined);
 });
 
+test('dev shortcuts start only api and postgres, never the production web service', () => {
+  for (const name of ['backend', 'backend:homebrain']) {
+    assert.match(pkg.scripts[name], / up --build api postgres$/);
+  }
+  const devAll = readFileSync(script, 'utf8');
+  assert.deepEqual(devAll.match(/^docker compose .*$/gm), ['docker compose "$@" up --build api postgres &']);
+});
+
 test('dev-all.sh starts backend and frontend and stops both on SIGINT', { timeout: 10_000 }, (t) =>
-  runDevAll(t, [], 'docker compose up --build'));
+  runDevAll(t, [], 'docker compose up --build api postgres'));
 
 test('dev-all.sh passes its arguments to docker compose (all:homebrain)', { timeout: 10_000 }, (t) =>
-  runDevAll(t, homebrainFiles.split(' '), `docker compose ${homebrainFiles} up --build`));
+  runDevAll(t, homebrainFiles.split(' '), `docker compose ${homebrainFiles} up --build api postgres`));
 
 async function runDevAll(t, args, expectedDocker) {
   const dir = mkdtempSync(join(tmpdir(), 'dev-all-'));

@@ -1,0 +1,92 @@
+# AGENTS.md — builder rulebook
+
+Read this before working. Then read `PLAN.md` and `README.md`.
+
+## Project map
+
+- `api/` — Express + Prisma backend (runs in Docker). Schema and migrations in `api/prisma/`.
+  Tests: `api/test/*.test.js` (`node:test`).
+- `web/` — Angular frontend. Production: multi-stage `web/Dockerfile` (`npm ci` + build, then
+  nginx serving `dist/web/browser`) with `web/nginx.conf` (`listen 127.0.0.1:8080`, `/api` proxy
+  to `127.0.0.1:8090`). Tests: `web/src/**/*.spec.ts` (Vitest via `ng test`), plus
+  `web/allow-scripts.test.mjs`; the image/nginx contract is checked in `api/test/deployment.test.js`.
+- `docker-compose.yml` — the full deployment: `web` 8080, `api` 8090, `postgres` 5434, all host network.
+- `scripts/network-smoke.mjs` — CI-only Docker smoke of the whole stack (needs 8080/8090/5434/8384/5984 free).
+- `scripts/dev-all.sh` — backs `npm run all`; tested by `scripts/dev-all.test.mjs`.
+- Status-file contracts: see PLAN.md
+  [Dev team status file format](PLAN.md#dev-team-status-file-format) and
+  [Host status files (M5, M6)](PLAN.md#host-status-files-m5-m6). Don't duplicate them here.
+
+## Skills
+
+- [add-dashboard-card](.claude/skills/add-dashboard-card/SKILL.md) — read when adding a
+  status card to the home page: service, card states, history strip, spec, home registration.
+- [add-status-endpoint](.claude/skills/add-status-endpoint/SKILL.md) — read when
+  adding an API endpoint backed by a host status file or host service.
+- [prisma-migration](.claude/skills/prisma-migration/SKILL.md) — read when
+  changing Postgres tables, columns, indexes, or constraints.
+- [review-checklist](.claude/skills/review-checklist/SKILL.md) — use when reviewing a PR;
+  checks this repo's standards in severity order, with links to the source rules.
+
+## Commands
+
+- Install: `npm ci` in `api/` and `web/` (not `npm install`). `api` postinstall runs `prisma generate`.
+- Run (repo root):
+  - `docker compose up -d` — production: web (http://127.0.0.1:8080), API and Postgres. Compose 2.30+.
+  - `npm run all` — local dev: `api` + `postgres` only (Docker, never the production `web`) plus
+    the Angular dev server on 4200. Keep dev shortcuts scoped to `api postgres`.
+  - `npm run all:homebrain` — compatibility alias using the now-empty Home Brain override. `npm run backend[:homebrain]` / `npm run frontend` run one half.
+- Test:
+  - Root: `npm test` (dev-all script and the `ci.yml` guard).
+  - `api/`: `npm test` (networking tests need Python 3). DB tests skip unless `DATABASE_URL` is set; migrate first with `npm run db:deploy`.
+  - `web/`: `npm test` (and `node --test allow-scripts.test.mjs`). `npm run build` for a production build.
+- Migrate (`api/`): `npm run db:migrate` (`prisma migrate dev`, creates migrations),
+  `npm run db:deploy` (`prisma migrate deploy`, applies them), `npm run db:generate`.
+
+## CI
+
+- A PR isn't done until the `ci` check (`.github/workflows/ci.yml`) is green. It runs the installs,
+  tests above (api against a `postgres:16` service), the web build on Node 24 and the Docker
+  Compose smoke (`scripts/network-smoke.mjs`). Keep the job id
+  `ci` with no `name:`, `contents: read`, no secrets, never `pull_request_target`.
+
+## Conventions
+
+- Prisma schema changes only via a new migration (`npm run db:migrate`); never hand-edit the
+  schema or tables against a running DB.
+- Config only from env vars listed in `.env.example`. New config means a new documented entry
+  there, not an ad hoc config file or flag.
+- `package-lock.json` stays committed (root, `api/`, `web/`). Docker builds use `npm ci`. A lockfile
+  change needs a matching `package.json` change, or reviewers flag it.
+
+## Gotchas learned on the Home Brain
+
+- Syncthing (8384) and CouchDB (5984) listen on `127.0.0.1` only on the host; containers that need
+  them use host networking (now the default Compose configuration).
+- WSL mirrored networking: a host-network container can't reach a Docker-published `127.0.0.1`
+  port. Run that dependency on the host network too (default `postgres` on 5434).
+- Compose requires 2.30+ for synchronous `post_start` startup safeguards. Never bypass those
+  hooks, rename `pgdata`/the existing project, or use `down -v` on deployment data. Port
+  probes are advisory; real binds and readiness determine startup success.
+- Compose explicitly selects the image's `/etc/postgresql/dashboard-pg_hba.conf` on
+  fresh AND existing volumes (SCRAM-only TCP, private local socket administration).
+  The volume HBA file is left untouched but is not effective. Existing credentials
+  and verifiers are never reset; MD5-only/absent verifiers fail closed with operator
+  guidance. Fresh init also uses `--auth-host=scram-sha-256`. Startup checks correct
+  and incorrect TCP passwords before readiness. Port 5434 is linked in the command,
+  healthcheck, startup/auth checks and API URL. The required CI smoke independently
+  initializes a stock legacy volume, proves TCP trust, then upgrades that same volume.
+- nginx in `web/`: the stock image's `/docker-entrypoint.d` and `conf.d` add a wildcard
+  `listen 80` server, so the Dockerfile deletes them. `proxy_pass http://127.0.0.1:8090;` has no
+  URI on purpose (path and query pass unchanged); never add `proxy_intercept_errors`/`error_page`
+  for `/api`, or API errors turn into `index.html`.
+- Builders' dev database: `127.0.0.1:5433` (user `dev`, password `dev`, db `dev`). Port 5434 is the
+  dashboard's own Postgres — don't confuse the two.
+- `.env.example` is the only env file ever committed — never commit a real `.env` (or `api/.env`).
+
+## Security rules
+
+- Public repo — never commit secrets, tokens, passwords, or real `.env` files.
+- The dashboard never gets Hermes API keys, restic passwords, Docker socket access, or bot log files.
+
+Keep this file current: if you learn something the next builder needs, add it here in the same PR.

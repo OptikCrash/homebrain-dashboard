@@ -2,6 +2,7 @@ import { DatePipe } from '@angular/common';
 import { Component, DestroyRef, OnInit, computed, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, interval, map, of, startWith, switchMap } from 'rxjs';
+import { HistoryStrip } from '../shared/history-strip';
 import { timelineSegments } from '../shared/timeline';
 import { CouchdbResponse, CouchdbStatus } from './couchdb-status';
 
@@ -14,7 +15,7 @@ const DEFAULT_REFRESH_MS = 30_000;
 // Reachability only for v1; the API has no replication detail yet.
 @Component({
   selector: 'app-couchdb-card',
-  imports: [DatePipe],
+  imports: [DatePipe, HistoryStrip],
   template: `
     <section class="card">
       <header>
@@ -41,16 +42,13 @@ const DEFAULT_REFRESH_MS = 30_000;
           <p class="empty">No CouchDB status recorded yet.</p>
         }
 
-        <div class="strip" role="img" aria-label="CouchDB history">
-          @for (segment of v.segments; track segment.start.getTime()) {
-            <span
-              class="segment"
-              [attr.data-status]="segment.status"
-              [style.width.%]="segment.percent"
-              [title]="segment.status + ': ' + (segment.start | date: 'short') + ' – ' + (segment.end | date: 'short')"
-            ></span>
-          }
-        </div>
+        @if (v.segments.length) {
+          <app-history-strip
+            [segments]="v.segments"
+            ariaLabel="CouchDB history"
+            unhealthyMeaning="Red: CouchDB didn't answer GET /_up."
+          />
+        }
       } @else if (!error()) {
         <p class="empty">Loading…</p>
       }
@@ -107,23 +105,6 @@ const DEFAULT_REFRESH_MS = 30_000;
       background: #1a7f37;
     }
     .badge[data-status='unhealthy'] {
-      background: #cf222e;
-    }
-    .strip {
-      display: flex;
-      height: 0.6rem;
-      margin-top: 0.75rem;
-      border-radius: 3px;
-      overflow: hidden;
-      background: #eaeef2;
-    }
-    .segment {
-      background: #8c959f;
-    }
-    .segment[data-status='healthy'] {
-      background: #2da44e;
-    }
-    .segment[data-status='unhealthy'] {
       background: #cf222e;
     }
   `,

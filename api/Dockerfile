@@ -6,15 +6,16 @@ RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
 
-# The schema has to be in place before `npm install`: its postinstall runs
-# `prisma generate`.
+# Install exactly what package-lock.json pins. The schema has to be in place
+# before `npm ci`: its postinstall runs `prisma generate`.
 COPY package*.json ./
 COPY prisma ./prisma
-RUN npm install --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
 COPY src ./src
+COPY wait-ready.sh ./wait-ready.sh
 
 USER node
-EXPOSE 3000
+EXPOSE 8090
 # Apply any pending migrations, then start the API.
-CMD ["sh", "-c", "npx prisma migrate deploy && exec node src/server.js"]
+CMD ["node", "src/start.js"]
