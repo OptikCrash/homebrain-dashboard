@@ -64,13 +64,15 @@ async function readSyncthingStatus({
   for (const id of ids) {
     const data = await get('db/status', id);
     if (!data) continue;
-    const errorCount = data.errors ?? data.pullErrors;
+    // Modern fields take precedence even when malformed; aliases apply only when absent.
+    const errorCount = Object.hasOwn(data, 'errors') ? data.errors : data.pullErrors;
+    const needItems = Object.hasOwn(data, 'needTotalItems') ? data.needTotalItems : data.needItems;
     if (typeof data.state !== 'string' || !data.state ||
-        ![errorCount, data.needItems, data.needBytes].every((value) => Number.isSafeInteger(value) && value >= 0)) {
+        ![errorCount, needItems, data.needBytes].every((value) => Number.isSafeInteger(value) && value >= 0)) {
       errors.push('Invalid Syncthing db/status response');
       continue;
     }
-    reading.folders.push({ id, state: data.state, errors: errorCount, needItems: data.needItems, needBytes: data.needBytes });
+    reading.folders.push({ id, state: data.state, errors: errorCount, needItems, needBytes: data.needBytes });
   }
   reading.error = errors.length ? errors.join('; ') : undefined;
   return reading;
