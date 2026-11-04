@@ -328,6 +328,11 @@ The reading contains `reachable`, `folders`, `connections` (device IDs mapped to
 later failures preserve successful results and set `error`. Failed folder reads are
 omitted, so consumers must check `error` before treating the reading as healthy.
 Each folder includes `id`, `state`, `errors`, `needItems`, and `needBytes`.
+Upstream `needTotalItems` maps to normalized `needItems`, including directories,
+symlinks and deletions. For legacy payloads only, absent `needTotalItems` falls
+back to `needItems`, and absent `errors` falls back to `pullErrors`. Present modern
+fields take precedence and must be valid, even if an alias is valid. Required
+counters must be nonnegative safe integers; missing counters are never zero-filled.
 Out-of-sync counts and folder errors are health signals, not request failures.
 The reader performs no polling, database writes, or Express routing.
 

@@ -90,3 +90,8 @@ Read this before working. Then read `PLAN.md` and `README.md`.
 - The dashboard never gets Hermes API keys, restic passwords, Docker socket access, or bot log files.
 
 Keep this file current: if you learn something the next builder needs, add it here in the same PR.
+
+- Syncthing REST `db/status` uses `needTotalItems` (including directories,
+  symlinks and deletions), normalized to dashboard `needItems`. The genuine
+  v2.1.7 fixture and isolated capture procedure live in
+  `api/test/fixtures/syncthing-v2.1.7/`; do not replace it with hand-written wire JSON.
