@@ -249,9 +249,11 @@ Goal: after documented `.env` setup, plain `docker compose up -d` builds and
 starts the whole dashboard (Postgres, API, production web) on the Home Brain,
 and nothing in the shipped deployment listens beyond host loopback.
 
-**Implementation dependency:** this PLAN entry lands first, on its own. No
-container/runtime work starts until it has merged **and** the Postgres
-networking decision below is settled by Chris.
+**Implementation dependency:** this PLAN entry lands first, on its own. The
+Postgres networking decision is settled (Chris approved host-network Postgres
+and web, see "Decision — Postgres and web networking" below), and Chris has
+authorized implementation once this addendum merges. Runtime work is #89;
+#90 stays dependent on #89.
 
 Acceptance criteria:
 - **API (default `docker-compose.yml`)**: `network_mode: host`, `PORT` 8090,
@@ -265,23 +267,41 @@ Acceptance criteria:
 - **No wildcard listeners**: no `0.0.0.0`, `::` or unqualified port listener
   or publication anywhere in the shipped dashboard deployment (API, web,
   Postgres).
-- **Postgres**: reachable only on `127.0.0.1`, proposed port **5434** (already
-  the dashboard's port in the Home Brain override; free-ness on the
-  deployment host is checked there, not assumed). How it is exposed depends on
-  the pending decision below. Preserved: the `pgdata` volume, credentials from
-  `.env` (`POSTGRES_*`, required), migrations applied on API start
-  (`prisma migrate deploy`), the read-only status mounts, and the API waiting
-  on Postgres readiness (`service_healthy`).
+- **Postgres (default `docker-compose.yml`)**: `network_mode: host`, no
+  `ports`, and the explicit command
+  `["postgres", "-p", "5434", "-c", "listen_addresses=127.0.0.1"]`, so it
+  listens on `127.0.0.1:5434` only (the approach already proven in the Home
+  Brain override). The healthcheck targets `-h 127.0.0.1 -p 5434`. Preserved:
+  - **Password auth**: credentials from `.env` (`POSTGRES_*`, required) and
+    password authentication stay as today; moving to host networking must not
+    switch to `trust` or any other password-less method.
+  - **Existing data**: the same `pgdata` volume — same volume name and Compose
+    project, so the existing data directory (cluster identity, migration
+    history and recorded status history) is reused as-is, not re-initialized,
+    renamed or replaced.
+  - Migrations applied on API start (`prisma migrate deploy`), the read-only
+    status mounts, and the API waiting on Postgres readiness
+    (`service_healthy`).
+- **Startup safeguards (plain `docker compose up -d`)**:
+  - **Occupied port fails automatically**: if 5434, 8090 or 8080 is already
+    held by something other than this stack, the plain Compose startup path
+    fails visibly (non-zero exit / unhealthy service with a clear log line).
+    It never silently falls back to another port, another address or a
+    wildcard bind, and no manual pre-check or extra script is required.
+  - **Idempotent repeated up**: running `docker compose up -d` again while the
+    dashboard is already up succeeds and leaves the running stack (and its
+    data) as is — its own listeners never count as "occupied".
 - **Web image**: multi-stage Dockerfile for `web/` — build stage runs `npm ci`
   against the committed `web/package-lock.json` and the production Angular
   build; the serving stage is a small static server with no dev server and no
   Node build toolchain at runtime.
 - **Web in Compose**: a `web` service in the default `docker-compose.yml`,
-  proposed endpoint `http://127.0.0.1:8080`. The server itself listens on an
-  explicit loopback address (e.g. host networking with a `127.0.0.1:8080`
-  listen directive) — a `127.0.0.1:` port publication over a wildcard
-  in-container listener does not count. Being on the host network, it reaches
-  the loopback-only API without an exposed gateway.
+  endpoint `http://127.0.0.1:8080`. Host networking is mandatory:
+  `network_mode: host`, no `ports`, and the server itself listens on
+  `127.0.0.1:8080` via an explicit listen directive. A `127.0.0.1:` port
+  publication over a wildcard in-container listener does not count. Being on
+  the host network, it reaches the loopback-only API without an exposed
+  gateway.
 - **Same-origin `/api`**: the web server proxies `/api/*` to
   `127.0.0.1:8090` with paths unchanged, and passes API status codes and
   bodies through (a 404/500/503 from the API stays that, not the SPA's
@@ -290,9 +310,13 @@ Acceptance criteria:
   (`scripts/dev-all.sh`) currently run every Compose service next to the
   Angular dev server. Scope them to `api` + `postgres` so dev workflows don't
   also start the production `web` service; update `scripts/dev-all.test.mjs`.
-- **Docs**: README and `.env.example` describe the production deployment: port
-  ownership (8080 web, 8090 API, 5434 Postgres, 5433 reserved for dev),
-  loopback URLs, and rebuild / start / stop / verify steps, with the Angular
+- **Docs**: README and `.env.example` describe the production deployment: a
+  port list (8080 web, 8090 API, 5434 Postgres, 5433 reserved for the
+  builders' dev database), all on `127.0.0.1`; the WSL mirrored networking
+  rationale for host networking (a host-network container can't reach a
+  Docker-published `127.0.0.1` port there, so every service runs on the host
+  network); what happens when a port is occupied; loopback URLs; and
+  rebuild / start / stop / verify steps, with the Angular
   dev server documented separately as an optional dev workflow. The
   implementation builder updates `AGENTS.md` where its commands, layout or
   gotchas go stale (e.g. "Angular dev server, not containerized", the
@@ -309,27 +333,20 @@ Acceptance criteria:
   `contents: read`, no secrets, never `pull_request_target`) and both reviews
   stay; no secrets and no Docker socket in any application container.
 
-**Pending decision — Postgres networking (Chris to choose; do not
-implement until chosen).** Chris asked for Postgres published on
-`127.0.0.1`. The README, `AGENTS.md` and `docker-compose.homebrain.yml` record
-that on the Home Brain, WSL mirrored networking stopped a host-network API
-container from reaching a Docker-published `127.0.0.1` port; the override
-therefore runs Postgres itself with `network_mode: host` and
-`postgres -p 5434 -c listen_addresses=127.0.0.1`. These are different
-deployments, not two spellings of one:
-- **(A) Host-network Postgres** — move the known-working override approach
-  into the default `docker-compose.yml`. Postgres listens on `127.0.0.1:5434`
-  directly; no Docker port publication. Works on the Home Brain today.
-- **(B) Bridge publication `127.0.0.1:5434:5432`** — literal Docker
-  publication as requested. Must be verified on the actual Home Brain host
-  (host-network API → published loopback port) before the deployment is
-  claimed to work; the known WSL limitation suggests it may fail.
+**Decision — Postgres and web networking (approved by Chris).** Postgres and
+web both run with `network_mode: host` in the default `docker-compose.yml`,
+alongside the host-network API; nothing is Docker-published. Why: the README,
+`AGENTS.md` and `docker-compose.homebrain.yml` record that on the Home Brain,
+WSL mirrored networking stops a host-network container from reaching a
+Docker-published `127.0.0.1` port, so a bridge publication such as
+`127.0.0.1:5434:5432` is not used. Postgres runs the explicit command above
+(`-p 5434 -c listen_addresses=127.0.0.1`), web listens on `127.0.0.1:8080`
+and the API on `127.0.0.1:8090`.
 
-Either way, plain `docker compose up -d` must be sufficient on its own — an
-extra required override file doesn't meet the goal — and the WSL workaround
-is neither silently dropped nor contradicted in the docs. What happens to
-`docker-compose.homebrain.yml` (removed, or reduced to whatever is still
-host-specific) follows from the choice.
+Plain `docker compose up -d` is sufficient on its own — no extra override
+file is required — and the WSL rationale stays documented, not dropped or
+contradicted. `docker-compose.homebrain.yml` is removed, or reduced to
+whatever is still host-specific, as part of the implementation.
 
 ## Decisions
 - `package-lock.json` is committed (root, `web/`, and `api/`) and Docker
@@ -344,8 +361,9 @@ host-specific) follows from the choice.
   library for v1 (simple timeline strips instead), dashboard on its own
   dedicated port (no reverse proxy).
 - M10 (planned): the shipped deployment binds loopback only (web
-  `127.0.0.1:8080`, API `127.0.0.1:8090`, Postgres `127.0.0.1`, proposed
-  5434) and starts from the default `docker-compose.yml` alone. This narrows
+  `127.0.0.1:8080`, API `127.0.0.1:8090`, Postgres `127.0.0.1:5434`, all
+  three on host networking, approved by Chris) and starts from the default
+  `docker-compose.yml` alone, failing on an occupied port. This narrows
   the v1 "LAN-only" assumption to host-only; off-host access stays an open
   question below.
 
@@ -365,6 +383,3 @@ host-specific) follows from the choice.
   user; Chris hasn't provisioned one yet. v1 ships reachability only; revisit
   once that user exists.
 - Auth/exposure model if dashboard needs to be reachable off-LAN later.
-- M10 Postgres networking: (A) host-network Postgres on `127.0.0.1:5434` or
-  (B) bridge publication `127.0.0.1:5434:5432`, verified on the host first.
-  Pending Chris; see M10. Blocks M10 implementation.
