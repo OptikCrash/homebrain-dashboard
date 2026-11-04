@@ -84,6 +84,23 @@ Read this before working. Then read `PLAN.md` and `README.md`.
   dashboard's own Postgres — don't confuse the two.
 - `.env.example` is the only env file ever committed — never commit a real `.env` (or `api/.env`).
 
+## Hard rule: no ad hoc network services (#102)
+
+Applies to every builder and reviewer, all model families, and local/manual work.
+
+- Never start network services or daemons (Syncthing, CouchDB, databases, web servers, etc.)
+  outside the repo's own test harness. No manually launched disposable service to obtain a fixture.
+- If a test needs a real service response, record it READ-ONLY from an ALREADY-RUNNING service,
+  or build the fixture BY HAND. Label handwritten fixtures as synthetic; never misrepresent
+  provenance. Never modify live config/keys/folders/data or write to a live service.
+- Never enable discovery or relays. Any listener launched by an authorized repo test harness must
+  bind explicitly and exclusively to `127.0.0.1` (no wildcard IPv4/IPv6, LAN or other
+  interfaces). If an existing harness cannot comply, do not run or change it ad hoc: stop and
+  ask Chris. The harness lifecycle owns temporary state/process cleanup; no default builder-home
+  service state.
+- Using the already-running dev database (`127.0.0.1:5433`) is not permission to start another
+  service manually.
+
 ## Security rules
 
 - Public repo — never commit secrets, tokens, passwords, or real `.env` files.
@@ -93,5 +110,6 @@ Keep this file current: if you learn something the next builder needs, add it he
 
 - Syncthing REST `db/status` uses `needTotalItems` (including directories,
   symlinks and deletions), normalized to dashboard `needItems`. The genuine
-  v2.1.7 fixture and isolated capture procedure live in
-  `api/test/fixtures/syncthing-v2.1.7/`; do not replace it with hand-written wire JSON.
+  v2.1.7 fixture and its capture provenance live in
+  `api/test/fixtures/syncthing-v2.1.7/`; do not replace it with hand-written wire JSON,
+  and do not repeat that capture (see the no ad hoc network services rule above).

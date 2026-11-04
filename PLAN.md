@@ -404,6 +404,24 @@ whatever is still host-specific, as part of the implementation.
   `docker-compose.yml` alone, failing on an occupied port. This narrows
   the v1 "LAN-only" assumption to host-only; off-host access stays an open
   question below.
+- No ad hoc network services (#102, Chris's safety correction after #99).
+  This applies to every builder and reviewer, all model families, and
+  local/manual work:
+  - Never start network services or daemons (Syncthing, CouchDB, databases,
+    web servers, etc.) outside the repo's own test harness. No manually
+    launched disposable service to obtain a fixture.
+  - If a test needs a real service response, record it read-only from an
+    already-running service, or build the fixture by hand. Label handwritten
+    fixtures as synthetic; never misrepresent provenance. Never modify live
+    config/keys/folders/data or write to a live service.
+  - Never enable discovery or relays. Any listener launched by an authorized
+    repo test harness binds explicitly and exclusively to `127.0.0.1` (no
+    wildcard IPv4/IPv6, LAN or other interfaces). If an existing harness
+    cannot comply, don't run or change it ad hoc: stop and ask Chris. The
+    harness lifecycle owns temporary state/process cleanup; no default
+    builder-home service state.
+  - Existing use of a running dev database is not permission to start
+    another service manually.
 
 ## Open questions
 - Dev builder status (M1) reads host paths (`$LOGS/*.pid`, log tails) and
